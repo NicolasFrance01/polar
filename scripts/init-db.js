@@ -1,6 +1,13 @@
 import pg from 'pg';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 dotenv.config();
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derived = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${derived}`;
+}
 
 const { Pool } = pg;
 
@@ -32,6 +39,7 @@ async function initDB() {
         name VARCHAR(150) NOT NULL,
         category VARCHAR(100),
         size VARCHAR(50),
+        description TEXT DEFAULT '',
         price NUMERIC(12, 2) NOT NULL,
         pack_price NUMERIC(12, 2),
         cost NUMERIC(12, 2),
@@ -45,6 +53,7 @@ async function initDB() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+    await client.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';`);
 
     // 2. Clients table
     await client.query(`
@@ -143,13 +152,23 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(50) PRIMARY KEY,
-        email VARCHAR(100) UNIQUE NOT NULL,
+        email VARCHAR(100) UNIQUE,
+        username VARCHAR(100) UNIQUE,
         name VARCHAR(100) NOT NULL,
         role VARCHAR(50) DEFAULT 'admin',
         phone VARCHAR(50),
+        password_hash TEXT,
+        active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(100) UNIQUE;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;`);
+    await client.query(`ALTER TABLE users ALTER COLUMN email DROP NOT NULL;`).catch(() => {});
+    await client.query(`ALTER TABLE trips ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;`);
+    await client.query(`ALTER TABLE trips ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';`);
+    await client.query(`ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS skip_reason TEXT DEFAULT '';`);
 
     // Seed Initial Products if empty
     const prodCountRes = await client.query('SELECT COUNT(*) FROM products');
@@ -212,15 +231,23 @@ async function initDB() {
       `);
     }
 
-    // Seed default admin user if empty
-    const userCountRes = await client.query('SELECT COUNT(*) FROM users');
-    if (parseInt(userCountRes.rows[0].count, 10) === 0) {
-      console.log('Seeding default admin user...');
-      await client.query(`
-        INSERT INTO users (id, email, name, role, phone)
-        VALUES ('usr-admin', 'admin@polar.com', 'Administrador Polar', 'admin', '5493512345678')
-      `);
-    }
+    // Seed master user with encrypted password (Ndf010399@)
+    const masterHash = hashPassword('Ndf010399@');
+    const driverHash = hashPassword('polar123');
+    await client.query(
+      `INSERT INTO users (id, username, email, name, role, phone, password_hash, active)
+       VALUES ('usr-master', 'master', 'master@polar.com', 'Master Admin', 'admin', '5493512345678', $1, true)
+       ON CONFLICT (id) DO UPDATE SET username = 'master', password_hash = EXCLUDED.password_hash`,
+      [masterHash]
+    );
+    await client.query(
+      `INSERT INTO users (id, username, email, name, role, phone, password_hash, active)
+       VALUES
+       ('usr-marcos', 'marcos', 'chofer1@polar.com', 'Marcos Gutiérrez', 'repartidor', '5491155550100', $1, true),
+       ('usr-sofia', 'sofia', 'chofer2@polar.com', 'Sofía Ramos', 'repartidor', '5491155550200', $1, true)
+       ON CONFLICT (id) DO NOTHING`,
+      [driverHash]
+    );
 
     await client.query('COMMIT');
     console.log('Database initialization completed successfully! All tables and seed data created.');

@@ -11,6 +11,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { decodeOrderParam, getStoredOrders } from '../services/tripSync';
+import { loginUser } from '../services/api';
 
 export default function AdminLoginModal({ 
   orderId, 
@@ -18,10 +19,11 @@ export default function AdminLoginModal({
   onApproveOrder, 
   onClose 
 }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [email, setEmail] = useState('admin@polar.com');
-  const [password, setPassword] = useState('polar2026');
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(localStorage.getItem('polar_auth_token')));
+  const [username, setUsername] = useState('master');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   // 1. Check orders passed via props
   let matchedOrder = (orders || []).find(o => o.orderId === orderId);
@@ -58,13 +60,20 @@ export default function AdminLoginModal({
     status: 'Pendiente de aprobación'
   };
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (password.length >= 4) {
-      setIsAuthenticated(true);
-      setError('');
-    } else {
-      setError('Contraseña inválida. Usá polar2026 para ingresar.');
+    setError('');
+    setLoading(true);
+    try {
+      const res = await loginUser(username.trim(), password);
+      if (res?.token) {
+        localStorage.setItem('polar_auth_token', res.token);
+        setIsAuthenticated(true);
+      }
+    } catch (err) {
+      setError(err.message || 'Usuario o contraseña incorrectos.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -97,12 +106,12 @@ export default function AdminLoginModal({
 
             <form onSubmit={handleLogin} className="space-y-3 text-xs pt-1">
               <div>
-                <label className="text-gray-700 font-semibold block mb-1">Email / Usuario</label>
+                <label className="text-gray-700 font-semibold block mb-1">Usuario o Email</label>
                 <input
-                  type="email"
+                  type="text"
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b] font-medium"
                 />
               </div>
@@ -124,14 +133,11 @@ export default function AdminLoginModal({
 
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-lg bg-[#0c315b] hover:bg-[#082342] text-white font-bold transition shadow-xs"
+                disabled={loading}
+                className="w-full py-2.5 rounded-lg bg-[#0c315b] hover:bg-[#082342] disabled:opacity-60 text-white font-bold transition shadow-xs"
               >
-                Ingresar y Ver Pedido
+                {loading ? 'Verificando...' : 'Ingresar y Ver Pedido'}
               </button>
-
-              <div className="text-center text-[10px] text-gray-400 pt-1">
-                Credencial de prueba: admin@polar.com / polar2026
-              </div>
             </form>
           </div>
         ) : (

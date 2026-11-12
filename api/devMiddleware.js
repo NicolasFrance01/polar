@@ -14,9 +14,9 @@ export function apiDevPlugin() {
         const endpoint = pathParts[0];
 
         try {
-          // Read request body if POST or PUT
+          // Read request body if POST, PUT or DELETE
           let body = {};
-          if (req.method === 'POST' || req.method === 'PUT') {
+          if (req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE') {
             const buffers = [];
             for await (const chunk of req) {
               buffers.push(chunk);
@@ -58,6 +58,10 @@ export function apiDevPlugin() {
             handler = (await import('./orders.js')).default;
           } else if (endpoint === 'dashboard') {
             handler = (await import('./dashboard.js')).default;
+          } else if (endpoint === 'auth') {
+            handler = (await import('./auth.js')).default;
+          } else if (endpoint === 'upload') {
+            handler = (await import('./upload.js')).default;
           } else {
             return res.status(404).json({ error: 'Endpoint not found' });
           }

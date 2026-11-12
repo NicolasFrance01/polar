@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 import { 
   Search, 
   Trash2, 
@@ -13,9 +14,12 @@ import {
   ArrowUp,
   X,
   Printer,
-  MessageCircle
+  MessageCircle,
+  Copy,
+  Check,
+  ExternalLink
 } from 'lucide-react';
-import { fetchClients } from '../services/api';
+import { fetchClients, createClient } from '../services/api';
 
 export default function Clientes() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -25,7 +29,15 @@ export default function Clientes() {
   const [sortBy, setSortBy] = useState('Saldo');
   const [expandedClientId, setExpandedClientId] = useState(null);
   const [selectedClientForQr, setSelectedClientForQr] = useState(null);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const [copiedQrLink, setCopiedQrLink] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+
+  const [newName, setNewName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newAddress, setNewAddress] = useState('');
+  const [newNeighborhood, setNewNeighborhood] = useState('Alberdi');
+  const [newBidones, setNewBidones] = useState(2);
 
   const initialSeed = [
     {
@@ -98,13 +110,13 @@ export default function Clientes() {
 
   const [clientsList, setClientsList] = useState(initialSeed);
 
-  useEffect(() => {
+  const loadClients = () => {
     fetchClients().then(dbClients => {
       if (Array.isArray(dbClients) && dbClients.length > 0) {
         const formatted = dbClients.map(c => ({
           id: c.id,
           name: c.name,
-          phone: c.phone,
+          phone: c.phone || '',
           address: `${c.address}${c.neighborhood ? `, ${c.neighborhood}` : ''}`,
           balance: -Math.abs(c.fiado_balance || 0),
           containers: [
@@ -118,11 +130,62 @@ export default function Clientes() {
         setClientsList(formatted);
       }
     });
+  };
+
+  useEffect(() => {
+    loadClients();
   }, []);
+
+  const getQrTargetUrl = (client) => {
+    if (!client) return `${window.location.origin}/cliente`;
+    const params = new URLSearchParams({
+      c: client.id,
+      n: client.name || '',
+      p: client.phone || '',
+      a: client.address || ''
+    });
+    return `${window.location.origin}/cliente?${params.toString()}`;
+  };
+
+  useEffect(() => {
+    if (!selectedClientForQr) {
+      setQrDataUrl('');
+      return;
+    }
+    const targetUrl = getQrTargetUrl(selectedClientForQr);
+    QRCode.toDataURL(targetUrl, {
+      width: 240,
+      margin: 1,
+      color: {
+        dark: '#0c315b',
+        light: '#ffffff'
+      }
+    }).then(setQrDataUrl).catch(() => setQrDataUrl(''));
+  }, [selectedClientForQr]);
+
+  const handleAddClient = async (e) => {
+    e.preventDefault();
+    try {
+      await createClient({
+        name: newName,
+        phone: newPhone,
+        address: newAddress,
+        neighborhood: newNeighborhood,
+        containers_held: { bidon20L: Number(newBidones) || 0, bidon12L: 0, sifon: 0 }
+      });
+      setShowAddModal(false);
+      setNewName('');
+      setNewPhone('');
+      setNewAddress('');
+      loadClients();
+    } catch (err) {
+      alert('Error al guardar cliente: ' + err.message);
+    }
+  };
 
   const filtered = clientsList.filter(c => {
     const matchText = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                      c.phone.includes(searchTerm) ||
+                      (c.phone || '').includes(searchTerm) ||
                       c.address.toLowerCase().includes(searchTerm.toLowerCase());
     if (!matchText) return false;
     if (onlyDebt && c.balance >= 0) return false;
@@ -132,17 +195,14 @@ export default function Clientes() {
 
   return (
     <div className="space-y-4">
-      {/* Title */}
-      <h1 className="text-2xl font-bold text-gray-900 text-center tracking-tight">
+      <h1 className="text-xl sm:text-2xl font-bold text-gray-900 text-center tracking-tight">
         Clientes
       </h1>
 
-      {/* Main Filter Section matching clientes.png & desktop-caja-fiados.png */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-2xs space-y-4">
-        
-        {/* Search input with outline style */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 shadow-2xs space-y-4">
+        {/* Search input */}
         <div className="relative">
-          <span className="absolute -top-2 left-2.5 bg-white px-1 text-[11px] text-gray-500 font-medium">
+          <span className="absolute -top-2 left-2.5 bg-white px-1 text-[11px] text-gray-500 font-medium z-10">
             Buscar por nombre, teléfono o dirección
           </span>
           <div className="relative">
@@ -156,15 +216,9 @@ export default function Clientes() {
           </div>
         </div>
 
-        {/* Filter bar: Checkboxes, select, buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-          
-          <div className="flex flex-wrap items-center gap-4">
-            <button className="text-gray-400 hover:text-gray-600 p-1" title="Eliminar selección">
-              <Trash2 className="w-4 h-4" />
-            </button>
-
-            {/* Checkbox Con Deuda */}
+        {/* Filter bar */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-3">
             <label className="flex items-center space-x-1.5 cursor-pointer text-gray-700 font-medium">
               <input
                 type="checkbox"
@@ -175,7 +229,6 @@ export default function Clientes() {
               <span>Con deuda</span>
             </label>
 
-            {/* Checkbox Inactivos */}
             <label className="flex items-center space-x-1.5 cursor-pointer text-gray-700 font-medium">
               <input
                 type="checkbox"
@@ -186,90 +239,65 @@ export default function Clientes() {
               <span>Inactivos</span>
             </label>
 
-            {/* Posee al menos cantidad */}
-            <div className="relative">
-              <input
-                type="number"
-                placeholder="Posee al menos cantidad"
-                value={minQty}
-                onChange={(e) => setMinQty(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-700 w-44 outline-none focus:border-[#0c315b]"
-              />
-            </div>
+            <input
+              type="number"
+              placeholder="Mín. envases"
+              value={minQty}
+              onChange={(e) => setMinQty(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-700 w-32 outline-none focus:border-[#0c315b]"
+            />
 
-            {/* Ordenar por */}
-            <div className="relative">
-              <span className="absolute -top-2 left-2 bg-white px-1 text-[10px] text-gray-500 font-medium">
-                Ordenar por
-              </span>
-              <div className="flex items-center border border-gray-300 rounded-lg px-2.5 py-1 text-xs">
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="bg-transparent outline-none pr-1 font-semibold text-gray-800 cursor-pointer"
-                >
-                  <option value="Saldo">Saldo</option>
-                  <option value="Nombre">Nombre</option>
-                  <option value="Último pedido">Último pedido</option>
-                </select>
-              </div>
+            <div className="flex items-center border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="bg-transparent outline-none pr-1 font-semibold text-gray-800 cursor-pointer"
+              >
+                <option value="Saldo">Orden: Saldo</option>
+                <option value="Nombre">Orden: Nombre</option>
+                <option value="Último pedido">Orden: Último pedido</option>
+              </select>
             </div>
-
-            <button className="text-gray-500 hover:text-gray-900" title="Invertir orden">
-              <ArrowUp className="w-4 h-4" />
-            </button>
           </div>
 
-          {/* Action Buttons Right matching clientes.png */}
-          <div className="flex items-center space-x-2">
-            
-            {/* QR Icon button */}
+          <div className="flex flex-wrap items-center gap-2">
             <button 
               onClick={() => setSelectedClientForQr(clientsList[0])}
-              className="w-8 h-8 rounded-lg bg-[#0c315b] text-white flex items-center justify-center hover:opacity-90 shadow-2xs"
-              title="Generar Códigos QR"
+              className="px-3 py-2 rounded-lg bg-sky-50 border border-sky-200 text-[#0c315b] font-bold flex items-center space-x-1.5 hover:bg-sky-100 transition"
+              title="Generar Sticker QR hacia /cliente"
             >
               <QrCode className="w-4 h-4" />
+              <span>QR /cliente</span>
             </button>
 
-            {/* Exportar button */}
-            <button className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 flex items-center space-x-1 transition">
-              <Download className="w-3.5 h-3.5" />
-              <span>Exportar</span>
-              <ChevronDown className="w-3 h-3 text-gray-400" />
-            </button>
-
-            {/* Agregar Cliente button */}
             <button 
               onClick={() => setShowAddModal(true)}
-              className="px-4 py-1.5 rounded-lg bg-[#0c315b] hover:bg-[#082342] text-white font-bold transition shadow-xs flex items-center space-x-1"
+              className="flex-1 sm:flex-initial px-4 py-2 rounded-lg bg-[#0c315b] hover:bg-[#082342] text-white font-bold transition shadow-xs flex items-center justify-center space-x-1"
             >
               <Plus className="w-4 h-4" />
               <span>Agregar Cliente</span>
             </button>
           </div>
-
         </div>
 
-        {/* Clients List Rows matching desktop-caja-fiados.png */}
+        {/* Clients List */}
         <div className="divide-y divide-gray-100 pt-2">
           {filtered.map((client) => {
             const isExpanded = expandedClientId === client.id;
             return (
               <div key={client.id} className="py-3.5 hover:bg-gray-50/60 rounded-xl px-2 transition">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  
-                  {/* Left: Name and containers badge */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                   <div>
                     <div className="flex items-center space-x-2">
                       <h3 className="font-bold text-gray-900 text-sm">{client.name}</h3>
                       <Home className="w-3.5 h-3.5 text-gray-400" />
                     </div>
 
-                    {/* Subtitle badge: El cliente posee [Bidón 20L: 8] */}
-                    <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500">
-                      <span>El cliente posee</span>
-                      {client.containers.map((cont, i) => (
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+                      <span>Posee:</span>
+                      {client.containers.length === 0 ? (
+                        <span className="text-gray-400">0 envases</span>
+                      ) : client.containers.map((cont, i) => (
                         <span 
                           key={i}
                           className="px-2 py-0.5 rounded-full text-[11px] font-bold border border-sky-300 bg-sky-50 text-[#0c315b]"
@@ -280,14 +308,12 @@ export default function Clientes() {
                     </div>
                   </div>
 
-                  {/* Right: Phone, Saldo, Actions */}
-                  <div className="flex items-center space-x-4 self-end sm:self-center text-xs">
+                  <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 text-xs">
                     <span className="text-gray-500 font-mono flex items-center gap-1">
                       <Phone className="w-3 h-3 text-gray-400" />
                       {client.phone}
                     </span>
 
-                    {/* Saldo: $-40500.00 */}
                     <span className={`font-black text-sm ${
                       client.balance < 0 ? 'text-rose-600' : 'text-gray-700'
                     }`}>
@@ -297,34 +323,25 @@ export default function Clientes() {
                       }
                     </span>
 
-                    {/* Icons: Edit, Delete, Expand, QR */}
                     <div className="flex items-center space-x-1.5 text-gray-400">
                       <button 
                         onClick={() => setSelectedClientForQr(client)}
-                        className="p-1 hover:text-[#0c315b]" 
-                        title="Ver QR"
+                        className="p-1.5 hover:bg-sky-50 rounded-lg hover:text-[#0c315b]" 
+                        title="Sticker QR para Bidón / Dispenser"
                       >
                         <QrCode className="w-4 h-4 text-sky-600" />
                       </button>
-                      <button className="p-1 hover:text-[#0c315b]" title="Editar">
-                        <Edit className="w-4 h-4 text-orange-500" />
-                      </button>
-                      <button className="p-1 hover:text-rose-600" title="Eliminar">
-                        <Trash2 className="w-4 h-4 text-rose-500" />
-                      </button>
                       <button 
                         onClick={() => setExpandedClientId(isExpanded ? null : client.id)}
-                        className="p-1 hover:text-gray-700" 
+                        className="p-1.5 hover:bg-gray-100 rounded-lg hover:text-gray-700" 
                         title="Ver más"
                       >
                         {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
-
                 </div>
 
-                {/* Expanded details */}
                 {isExpanded && (
                   <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs bg-gray-50 p-3 rounded-lg">
                     <div>
@@ -333,20 +350,20 @@ export default function Clientes() {
                     </div>
                     <div>
                       <span className="text-gray-400 block text-[10px] uppercase font-bold">Notas de entrega:</span>
-                      <span className="text-gray-700">{client.notes}</span>
+                      <span className="text-gray-700">{client.notes || 'Sin notas'}</span>
                     </div>
-                    <div className="text-right">
+                    <div className="sm:text-right">
                       <button
                         onClick={() => {
                           const msg = encodeURIComponent(
-                            `Hola ${client.name}! Te escribimos de Soda y Agua Polar. Tu saldo actual es de $${Math.abs(client.balance).toLocaleString()}. Podés transferir al alias POLAR.AGUA.`
+                            `Hola ${client.name}! Te escribimos de Soda y Agua Polar. Podés hacer tu próximo pedido directo desde este link: ${getQrTargetUrl(client)}`
                           );
                           window.open(`https://wa.me/${client.phone}?text=${msg}`, '_blank');
                         }}
-                        className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center space-x-1"
+                        className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center space-x-1"
                       >
                         <MessageCircle className="w-3.5 h-3.5" />
-                        <span>Cobrar por WhatsApp</span>
+                        <span>Enviar Link /cliente</span>
                       </button>
                     </div>
                   </div>
@@ -355,10 +372,9 @@ export default function Clientes() {
             );
           })}
         </div>
-
       </div>
 
-      {/* QR MODAL */}
+      {/* QR STICKER MODAL -> Redirects to /cliente */}
       {selectedClientForQr && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-2xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center shadow-xl border border-gray-200">
@@ -369,22 +385,55 @@ export default function Clientes() {
               </button>
             </div>
 
-            <p className="text-xs text-gray-500 mb-4">
-              Pegar en el bidón o dispenser de <strong>{selectedClientForQr.name}</strong> para pedir con 1 escaneo.
+            <p className="text-xs text-gray-500 mb-3">
+              Pegar en el bidón o dispenser de <strong>{selectedClientForQr.name}</strong>. Al escanearlo abre directo <strong>/cliente</strong> con sus datos cargados.
             </p>
 
-            <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 inline-block mx-auto mb-4">
-              <div className="w-40 h-40 bg-white p-2 rounded-lg border border-gray-300 flex items-center justify-center relative">
-                <QrCode className="w-32 h-32 text-gray-900" />
+            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 inline-block mx-auto mb-3">
+              <div className="w-48 h-48 bg-white p-2 rounded-lg border border-gray-300 flex items-center justify-center relative">
+                {qrDataUrl ? (
+                  <img src={qrDataUrl} alt="QR Cliente Polar" className="w-full h-full object-contain" />
+                ) : (
+                  <QrCode className="w-32 h-32 text-gray-900" />
+                )}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-8 h-8 rounded-full bg-white p-0.5 border border-sky-400">
+                  <div className="w-9 h-9 rounded-full bg-white p-0.5 border-2 border-[#0c315b] shadow-sm">
                     <img src="/images/logo-polar.png" alt="logo" className="w-full h-full object-contain rounded-full" />
                   </div>
                 </div>
               </div>
               <span className="block text-[10px] font-mono text-gray-500 mt-2">
-                ID: {selectedClientForQr.id} · Polar Pass
+                {selectedClientForQr.name} · Escaneá para pedir
               </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 mb-3 text-left">
+              <input
+                type="text"
+                readOnly
+                value={getQrTargetUrl(selectedClientForQr)}
+                className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-[10px] font-mono text-gray-600"
+              />
+              <button
+                onClick={() => {
+                  navigator.clipboard?.writeText(getQrTargetUrl(selectedClientForQr));
+                  setCopiedQrLink(true);
+                  setTimeout(() => setCopiedQrLink(false), 2000);
+                }}
+                className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 text-gray-700"
+                title="Copiar link"
+              >
+                {copiedQrLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+              </button>
+              <a
+                href={getQrTargetUrl(selectedClientForQr)}
+                target="_blank"
+                rel="noreferrer"
+                className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 text-[#0c315b]"
+                title="Probar link /cliente"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
             </div>
 
             <button
@@ -409,28 +458,61 @@ export default function Clientes() {
               </button>
             </div>
 
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              setShowAddModal(false);
-              alert('Cliente guardado con éxito.');
-            }} className="space-y-3 text-xs">
+            <form onSubmit={handleAddClient} className="space-y-3 text-xs">
               <div>
-                <label className="block text-gray-700 font-semibold mb-1">Nombre Completo</label>
-                <input type="text" required placeholder="Ej: Familia Gómez" className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b]" />
+                <label className="block text-gray-700 font-semibold mb-1">Nombre Completo *</label>
+                <input
+                  type="text"
+                  required
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Ej: Familia Gómez"
+                  className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b]"
+                />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-gray-700 font-semibold mb-1">WhatsApp</label>
-                  <input type="text" required placeholder="54911..." className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b]" />
+                  <label className="block text-gray-700 font-semibold mb-1">WhatsApp *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value)}
+                    placeholder="549351..."
+                    className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b]"
+                  />
                 </div>
                 <div>
-                  <label className="block text-gray-700 font-semibold mb-1">Envases 20L Iniciales</label>
-                  <input type="number" defaultValue="2" className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b]" />
+                  <label className="block text-gray-700 font-semibold mb-1">Envases 20L</label>
+                  <input
+                    type="number"
+                    value={newBidones}
+                    onChange={(e) => setNewBidones(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b]"
+                  />
                 </div>
               </div>
-              <div>
-                <label className="block text-gray-700 font-semibold mb-1">Dirección de Entrega</label>
-                <input type="text" required placeholder="Calle y número" className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b]" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-1">Dirección *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newAddress}
+                    onChange={(e) => setNewAddress(e.target.value)}
+                    placeholder="Calle y número"
+                    className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-1">Barrio</label>
+                  <input
+                    type="text"
+                    value={newNeighborhood}
+                    onChange={(e) => setNewNeighborhood(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b]"
+                  />
+                </div>
               </div>
               <div className="pt-2 flex justify-end space-x-2">
                 <button type="button" onClick={() => setShowAddModal(false)} className="px-3 py-1.5 border rounded-lg font-semibold text-gray-600">Cancelar</button>
@@ -440,7 +522,6 @@ export default function Clientes() {
           </div>
         </div>
       )}
-
     </div>
   );
 }

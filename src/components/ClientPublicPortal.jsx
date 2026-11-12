@@ -1,22 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  MapPin, 
-  Phone, 
-  User, 
   Send, 
   CheckCircle, 
   Crosshair, 
-  ShoppingBag, 
-  MessageCircle, 
-  Clock, 
-  ArrowLeft,
-  Sparkles
+  MessageCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { POLAR_PRODUCTS } from '../data/mockData';
+import { fetchProducts } from '../services/api';
 import { saveOrder, encodeOrderParam } from '../services/tripSync';
 
-export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
+export default function ClientPublicPortal({ onOrderCreated }) {
+  const [products, setProducts] = useState(POLAR_PRODUCTS);
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -25,18 +20,27 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
   const [coords, setCoords] = useState(null);
   const [isLocating, setIsLocating] = useState(false);
   const [locationStatus, setLocationStatus] = useState('');
-
-  // Cart quantities
-  const [cart, setCart] = useState({
-    'prod-20l': 2,
-    'prod-12l': 0,
-    'prod-soda': 2,
-    'prod-dispenser': 0
-  });
-
+  const [cart, setCart] = useState({});
   const [orderSubmitted, setOrderSubmitted] = useState(null);
 
-  // Use browser geolocation to capture exact customer pin and autofill address
+  // Pre-fill from QR Sticker query parameters (?c=...&n=...&p=...&a=...)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const n = params.get('n');
+    const p = params.get('p');
+    const a = params.get('a');
+    if (n) setClientName(n);
+    if (p) setClientPhone(p);
+    if (a) setAddress(a);
+
+    // Load live catalog from DB so updated descriptions & Blob images appear
+    fetchProducts().then((dbProds) => {
+      if (Array.isArray(dbProds) && dbProds.length > 0) {
+        setProducts(dbProds);
+      }
+    });
+  }, []);
+
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
       setLocationStatus('Tu navegador no soporta geolocalización.');
@@ -57,13 +61,10 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
           let foundStreet = '';
           let foundBarrio = '';
 
-          // 1. Try OpenStreetMap Nominatim reverse geocoding
           try {
             const res = await fetch(
               `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-              {
-                headers: { 'Accept-Language': 'es' }
-              }
+              { headers: { 'Accept-Language': 'es' } }
             );
             if (res.ok) {
               const data = await res.json();
@@ -75,11 +76,8 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
                 foundBarrio = a.suburb || a.neighbourhood || a.city_district || a.quarter || a.residential || a.city || '';
               }
             }
-          } catch (e) {
-            console.warn('Nominatim fallback, trying BigDataCloud...', e);
-          }
+          } catch (e) {}
 
-          // 2. Fallback to BigDataCloud client reverse geocoding if street wasn't found
           if (!foundStreet) {
             try {
               const res2 = await fetch(
@@ -95,26 +93,21 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
             } catch (e2) {}
           }
 
-          // Autofill inputs
-          if (foundStreet) {
-            setAddress(foundStreet);
-          }
-          if (foundBarrio) {
-            setNeighborhood(foundBarrio);
-          }
+          if (foundStreet) setAddress(foundStreet);
+          if (foundBarrio) setNeighborhood(foundBarrio);
 
           if (foundStreet) {
-            setLocationStatus(`✓ Dirección y barrio autocompletados: ${foundStreet}${foundBarrio ? `, ${foundBarrio}` : ''} (±${Math.round(pos.coords.accuracy)}m)`);
+            setLocationStatus(`Dirección autocompletada: ${foundStreet}${foundBarrio ? `, ${foundBarrio}` : ''} (±${Math.round(pos.coords.accuracy)}m)`);
           } else {
-            setLocationStatus(`✓ Ubicación GPS fijada (±${Math.round(pos.coords.accuracy)}m).`);
+            setLocationStatus(`Ubicación GPS fijada (±${Math.round(pos.coords.accuracy)}m).`);
           }
         } catch (err) {
-          setLocationStatus(`✓ Ubicación GPS fijada (±${Math.round(pos.coords.accuracy)}m).`);
+          setLocationStatus(`Ubicación GPS fijada (±${Math.round(pos.coords.accuracy)}m).`);
         } finally {
           setIsLocating(false);
         }
       },
-      (err) => {
+      () => {
         setIsLocating(false);
         setLocationStatus('Permiso de ubicación denegado. Podés escribir tu dirección manualmente.');
       },
@@ -124,8 +117,8 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
 
   const calculateTotal = () => {
     return Object.entries(cart).reduce((sum, [id, qty]) => {
-      const prod = POLAR_PRODUCTS.find(p => p.id === id);
-      return sum + (prod ? prod.price * qty : 0);
+      const prod = products.find((p) => p.id === id);
+      return sum + (prod ? Number(prod.price) * qty : 0);
     }, 0);
   };
 
@@ -140,9 +133,10 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
     const itemsList = Object.entries(cart)
       .filter(([_, qty]) => qty > 0)
       .map(([id, qty]) => {
-        const prod = POLAR_PRODUCTS.find(p => p.id === id);
-        return { ...prod, qty };
-      });
+        const prod = products.find((p) => p.id === id);
+        return prod ? { id: prod.id, name: prod.name, price: Number(prod.price), qty } : null;
+      })
+      .filter(Boolean);
 
     const newOrder = {
       orderId,
@@ -167,8 +161,7 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
       confetti({ particleCount: 70, spread: 60 });
     } catch (err) {}
 
-    // Prepare WhatsApp Message and link with full encoded order payload
-    const itemsText = itemsList.map(i => `• ${i.qty}x ${i.name} ($${(i.price * i.qty).toLocaleString()})`).join('\n');
+    const itemsText = itemsList.map((i) => `• ${i.qty}x ${i.name} ($${(i.price * i.qty).toLocaleString()})`).join('\n');
     const encodedData = encodeOrderParam(newOrder);
     const systemLink = `${window.location.origin}/?manageOrder=${orderId}&d=${encodedData}`;
 
@@ -193,48 +186,38 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col justify-between font-sans">
-      
-      {/* Top Banner */}
-      <header className="bg-white border-b border-gray-200 py-3 px-4 shadow-2xs">
+      {/* Top Public Banner */}
+      <header className="bg-white border-b border-gray-200 py-3 px-4 shadow-2xs sticky top-0 z-20">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
-            <img src="/images/logo-polar.png" alt="Polar" className="w-8 h-8 rounded-full border border-sky-300" />
+            <img src="/images/logo-polar.png" alt="Polar" className="w-9 h-9 rounded-full border border-sky-300 object-contain" />
             <div>
               <span className="font-black text-sm text-[#0c315b] tracking-tight block">Soda y Agua POLAR</span>
               <span className="text-[10px] text-gray-500 font-medium">Portal Oficial de Pedidos a Domicilio</span>
             </div>
           </div>
 
-          {onBackToAdmin && (
-            <button
-              onClick={onBackToAdmin}
-              className="text-xs text-[#0c315b] hover:underline font-semibold flex items-center gap-1"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Volver al Sistema</span>
-            </button>
-          )}
+          <span className="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
+            Pedidos Online
+          </span>
         </div>
       </header>
 
       {/* Main Container */}
-      <main className="max-w-2xl w-full mx-auto p-4 sm:p-6 flex-1">
-        
+      <main className="max-w-2xl w-full mx-auto p-3 sm:p-6 flex-1">
         {orderSubmitted ? (
-          /* Confirmation Screen */
           <div className="bg-white rounded-2xl p-6 border border-emerald-200 shadow-md text-center space-y-4">
             <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
               <CheckCircle className="w-9 h-9" />
             </div>
 
             <h2 className="text-xl font-black text-gray-900">
-              ¡Pedido #{orderSubmitted.orderId} Listo para Enviar!
+              ¡Pedido #{orderSubmitted.orderId} Registrado!
             </h2>
             <p className="text-xs text-gray-600 max-w-md mx-auto">
-              Presioná el botón de abajo para enviar el pedido directamente al <strong>WhatsApp de Soda y Agua Polar</strong> con tu dirección y productos.
+              Tu pedido ya ingresó al sistema de Polar. También podés enviarlo por <strong>WhatsApp</strong> para agilizar la coordinación.
             </p>
 
-            {/* Order Summary Box */}
             <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 text-left text-xs space-y-2">
               <div className="flex justify-between border-b pb-2">
                 <span className="text-gray-500 font-medium">Cliente:</span>
@@ -242,26 +225,11 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
               </div>
               <div className="flex justify-between border-b pb-2">
                 <span className="text-gray-500 font-medium">Entrega en:</span>
-                <strong className="text-gray-900">{orderSubmitted.address} ({orderSubmitted.neighborhood})</strong>
+                <strong className="text-gray-900 text-right">{orderSubmitted.address} ({orderSubmitted.neighborhood})</strong>
               </div>
-              <div className="flex justify-between border-b pb-2">
+              <div className="flex justify-between">
                 <span className="text-gray-500 font-medium">Total:</span>
                 <strong className="text-base text-[#0c315b] font-black">${orderSubmitted.total.toLocaleString()}</strong>
-              </div>
-
-              <div className="pt-1">
-                <span className="text-gray-400 block text-[10px] uppercase font-bold mb-1">
-                  Enlace seguro del sistema generado para Polar:
-                </span>
-                <input 
-                  type="text" 
-                  readOnly 
-                  value={orderSubmitted.systemLink} 
-                  className="w-full bg-white border border-gray-300 rounded px-2 py-1 text-[11px] font-mono text-gray-600"
-                />
-                <span className="text-[10px] text-gray-400 block mt-0.5">
-                  🔒 Si el repartidor o dueño abre este enlace, el sistema le pedirá sus credenciales de acceso para ver y cargar el pedido.
-                </span>
               </div>
             </div>
 
@@ -272,7 +240,7 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
               className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm flex items-center justify-center space-x-2 shadow-md transition"
             >
               <MessageCircle className="w-5 h-5" />
-              <span>ENVIAR PEDIDO POR WHATSAPP</span>
+              <span>ENVIAR TAMBIÉN POR WHATSAPP</span>
             </a>
 
             <button
@@ -283,9 +251,7 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
             </button>
           </div>
         ) : (
-          /* Order Form */
-          <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-5 sm:p-7 border border-gray-200 shadow-sm space-y-5">
-            
+          <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-4 sm:p-7 border border-gray-200 shadow-sm space-y-5">
             <div>
               <h2 className="text-lg font-black text-[#0c315b]">Pedí tu Agua y Soda Polar</h2>
               <p className="text-xs text-gray-500 mt-0.5">
@@ -308,7 +274,7 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
                     placeholder="Ej: Familia Gómez"
                     value={clientName}
                     onChange={(e) => setClientName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0c315b]"
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0c315b]"
                   />
                 </div>
 
@@ -320,7 +286,7 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
                     placeholder="3512345678"
                     value={clientPhone}
                     onChange={(e) => setClientPhone(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0c315b]"
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0c315b]"
                   />
                 </div>
               </div>
@@ -344,7 +310,7 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
                   placeholder="Calle, número, piso y departamento"
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0c315b]"
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0c315b]"
                 />
                 {locationStatus && (
                   <span className="text-[10px] text-emerald-600 font-medium block mt-1">
@@ -361,7 +327,7 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
                     placeholder="Ej: Alberdi, Centro, Nueva Cba"
                     value={neighborhood}
                     onChange={(e) => setNeighborhood(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0c315b]"
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0c315b]"
                   />
                 </div>
 
@@ -372,7 +338,7 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
                     placeholder="Ej: Timbre portón blanco"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0c315b]"
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0c315b]"
                   />
                 </div>
               </div>
@@ -384,32 +350,34 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
                 2. Seleccioná tus Productos
               </span>
 
-              <div className="space-y-2">
-                {POLAR_PRODUCTS.map((prod) => (
+              <div className="space-y-2.5">
+                {products.map((prod) => (
                   <div 
                     key={prod.id}
-                    className="flex items-center justify-between p-3 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white transition"
+                    className="flex items-center justify-between gap-2 p-3 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white transition"
                   >
-                    <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-3 min-w-0">
                       <div className="w-12 h-12 bg-white rounded-lg p-1 border border-gray-200 flex items-center justify-center flex-shrink-0">
-                        <img src={prod.image} alt={prod.name} className="max-h-full max-w-full object-contain" />
+                        <img src={prod.image || '/images/bidon-20l.png'} alt={prod.name} className="max-h-full max-w-full object-contain" />
                       </div>
-                      <div>
-                        <h4 className="font-bold text-gray-900 text-xs">{prod.name}</h4>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-gray-900 text-xs truncate">{prod.name}</h4>
                         <span className="text-[11px] font-black text-[#0c315b]">
-                          ${prod.price.toLocaleString()}
+                          ${Number(prod.price || 0).toLocaleString()}
                         </span>
-                        {prod.subscriptionPlan && (
-                          <span className="block text-[10px] text-sky-800 font-semibold">{prod.subscriptionPlan}</span>
+                        {(prod.description || prod.subscriptionPlan) && (
+                          <span className="block text-[10px] text-gray-500 line-clamp-1">
+                            {prod.description || prod.subscriptionPlan}
+                          </span>
                         )}
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 flex-shrink-0">
                       <button
                         type="button"
                         onClick={() => setCart({ ...cart, [prod.id]: Math.max(0, (cart[prod.id] || 0) - 1) })}
-                        className="w-7 h-7 rounded-lg bg-white border border-gray-300 text-gray-700 font-bold hover:bg-gray-100"
+                        className="w-8 h-8 rounded-lg bg-white border border-gray-300 text-gray-700 font-bold hover:bg-gray-100"
                       >-</button>
                       <span className="font-black text-sm w-5 text-center text-gray-900">
                         {cart[prod.id] || 0}
@@ -417,7 +385,7 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
                       <button
                         type="button"
                         onClick={() => setCart({ ...cart, [prod.id]: (cart[prod.id] || 0) + 1 })}
-                        className="w-7 h-7 rounded-lg bg-[#0c315b] text-white font-bold hover:bg-[#082342]"
+                        className="w-8 h-8 rounded-lg bg-[#0c315b] text-white font-bold hover:bg-[#082342]"
                       >+</button>
                     </div>
                   </div>
@@ -440,20 +408,16 @@ export default function ClientPublicPortal({ onOrderCreated, onBackToAdmin }) {
                 className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#0c315b] to-[#0284c7] hover:opacity-95 disabled:opacity-50 text-white font-extrabold text-xs tracking-wider uppercase flex items-center justify-center space-x-2 shadow-md transition"
               >
                 <Send className="w-4 h-4" />
-                <span>CONFIRMAR Y ENVIAR AL WHATSAPP DE POLAR</span>
+                <span>CONFIRMAR PEDIDO</span>
               </button>
             </div>
-
           </form>
         )}
-
       </main>
 
-      {/* Footer */}
       <footer className="py-4 text-center text-xs text-gray-400">
         Soda y Agua POLAR · Sistema de Repartos a Domicilio
       </footer>
-
     </div>
   );
 }

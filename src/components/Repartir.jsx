@@ -1,692 +1,833 @@
-import React, { useState } from 'react';
-import { 
-  RotateCw, 
-  Plus, 
-  FileText, 
-  Search, 
-  MapPin, 
-  Phone, 
-  MessageCircle, 
-  Map as MapIcon, 
-  ClipboardList, 
-  Check, 
-  CheckCircle,
-  Clock, 
-  ChevronRight,
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  MapPin,
+  Phone,
+  MessageCircle,
+  Check,
+  Truck,
+  Plus,
+  Copy,
+  ExternalLink,
+  History,
+  Route,
   ArrowUp,
-  X,
-  Printer
+  ArrowDown,
+  Trash2,
+  Loader2,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  XCircle,
+  ChevronDown,
+  ChevronUp,
+  RotateCw
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import {
+  fetchOrders,
+  fetchTrips,
+  fetchUsers,
+  createTrip
+} from '../services/api';
+import { getStoredOrders } from '../services/tripSync';
 
-export default function Repartir({ onOpenComprobante }) {
-  const [subtab, setSubtab] = useState('reparto'); // 'reparto' | 'programados'
-  const [mode, setMode] = useState('pedidos'); // 'pedidos' | 'mapa'
-  const [searchTerm, setSearchTerm] = useState('');
-  
-  // Delivery modal state
-  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
-  const [selectedStopForDelivery, setSelectedStopForDelivery] = useState(null);
-  const [deliveredQty20L, setDeliveredQty20L] = useState(2);
-  const [deliveredQty12L, setDeliveredQty12L] = useState(0);
-  const [deliveredQtySoda, setDeliveredQtySoda] = useState(2);
-  const [collectedEmpty20L, setCollectedEmpty20L] = useState(2);
-  const [paymentType, setPaymentType] = useState('Efectivo');
+const DEFAULT_DRIVERS = [
+  { id: 'usr-marcos', name: 'Marcos Gutiérrez', phone: '5491155550100', truck: 'Camión #1 (Mercedes Sprinter)' },
+  { id: 'usr-sofia', name: 'Sofía Ramos', phone: '5491155550200', truck: 'Camión #2 (Renault Master)' }
+];
 
-  // List of stops matching visual-mobile.png & comprobantes.png
-  const [stops, setStops] = useState([
-    {
-      id: '901525',
-      orderNumber: 1,
-      clientName: 'Don Mario Talleres',
-      address: 'Loyola 320, Villa Crespo',
-      phone: '5491155550101',
-      lastDelivery: 'hace 4 días (15/09) · 2x Bidón 20L',
-      balance: 0,
-      time: '15:20',
-      status: 'entregado',
-      items: [{ name: 'Bidón 20L', qty: 2, price: 4200 }],
-      total: 8400
-    },
-    {
-      id: '901526',
-      orderNumber: 2,
-      clientName: 'Familia Rossi',
-      address: 'Serrano 540, Villa Crespo',
-      phone: '5491155550102',
-      lastDelivery: 'hace 7 días (12/09) · 1x Bidón 20L + 2 Sifones',
-      balance: 0,
-      time: '15:35',
-      status: 'entregado',
-      items: [
-        { name: 'Bidón 20L', qty: 1, price: 4200 },
-        { name: 'Sifón Soda 1.5L', qty: 2, price: 1300 }
-      ],
-      total: 6800
-    },
-    {
-      id: '901527',
-      orderNumber: 3,
-      clientName: 'Consultorio Dental Crespo',
-      address: 'Corrientes 4800, Piso 2',
-      phone: '5491155550103',
-      lastDelivery: 'hace 5 días (14/09) · 3x Bidón 20L',
-      balance: 0,
-      time: '15:45',
-      status: 'entregado',
-      items: [{ name: 'Bidón 20L', qty: 3, price: 4200 }],
-      total: 12600
-    },
-    {
-      id: '901528',
-      orderNumber: 4,
-      isNextStop: true, // PRÓXIMA PARADA in visual-mobile.png
-      clientName: 'María Esther López',
-      address: 'Camargo 460, Villa Crespo',
-      phone: '5491155550105',
-      lastDelivery: 'hace 2 días (17/09) · 2x Bidón 20L',
-      balance: 0,
-      time: '15:53',
-      status: 'en_camino',
-      items: [{ name: 'Bidón 20L', qty: 2, price: 4200 }],
-      total: 8400
-    },
-    {
-      id: '901529',
-      orderNumber: 5,
-      clientName: 'Rubén Álvarez',
-      address: 'Vera 620, Villa Crespo',
-      phone: '5491155550106',
-      lastDelivery: 'hace 3 días (18/09) · 3x Bidón 20L',
-      balance: 0,
-      time: '15:55',
-      status: 'en_camino',
-      items: [{ name: 'Bidón 20L', qty: 3, price: 4200 }],
-      total: 12600
-    },
-    {
-      id: '901531',
-      orderNumber: 6,
-      clientName: 'Raúl Medina',
-      address: 'Neuquén 750, Caballito',
-      phone: '5491155550107',
-      lastDelivery: 'hace 20 días (30/08) · 2x Bidón 12L',
-      balance: -3500.00,
-      time: '16:00',
-      status: 'en_camino',
-      items: [{ name: 'Bidón 12L c/ canilla', qty: 2, price: 3300 }],
-      total: 6600
-    },
-    {
-      id: '901532',
-      orderNumber: 7,
-      clientName: 'Roberto Fernández', // From comprobantes.png!
-      address: 'Aguirre 750, Villa Crespo',
-      phone: '5491155550108',
-      lastDelivery: 'hace 15 días (01/09) · 4x Bidón 20L',
-      balance: -13500.00,
-      time: '16:15',
-      status: 'en_camino',
-      items: [
-        { name: 'Bidón 20L', qty: 4, price: 4500 }
-      ],
-      total: 18000
-    },
-    {
-      id: '901533',
-      orderNumber: 8,
-      clientName: 'Almacén Don Tito',
-      address: 'Acevedo 820, Villa Crespo',
-      phone: '5491155550109',
-      lastDelivery: 'hace 6 días (13/09) · 1x Cajón Soda',
-      balance: 0,
-      time: '16:30',
-      status: 'en_camino',
-      items: [{ name: 'Cajón x6 Sifones 1.5L', qty: 1, price: 7500 }],
-      total: 7500
-    }
-  ]);
+export default function Repartir({ onOpenDriverTrip }) {
+  const [subtab, setSubtab] = useState('armar'); // 'armar' | 'historial'
+  const [orders, setOrders] = useState([]);
+  const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+  const [focusedOrder, setFocusedOrder] = useState(null);
+  const [drivers, setDrivers] = useState(DEFAULT_DRIVERS);
 
-  const deliveredCount = stops.filter(s => s.status === 'entregado').length;
-  const totalStops = stops.length;
+  // Route creation form
+  const [selectedDriverName, setSelectedDriverName] = useState(DEFAULT_DRIVERS[0].name);
+  const [driverPhone, setDriverPhone] = useState(DEFAULT_DRIVERS[0].phone);
+  const [truck, setTruck] = useState(DEFAULT_DRIVERS[0].truck);
+  const [zone, setZone] = useState('Zona Centro / Alberdi');
+  const [routeNotes, setRouteNotes] = useState('');
+  const [creatingRoute, setCreatingRoute] = useState(false);
+  const [createdRouteResult, setCreatedRouteResult] = useState(null);
+  const [copiedPath, setCopiedPath] = useState(null);
 
-  const handleStartDelivery = (stop) => {
-    setSelectedStopForDelivery(stop);
-    setShowDeliveryModal(true);
-  };
+  // History state
+  const [tripsHistory, setTripsHistory] = useState([]);
+  const [historyFilter, setHistoryFilter] = useState('todos'); // 'todos' | 'en_curso' | 'finalizada'
+  const [expandedTripId, setExpandedTripId] = useState(null);
+  const [loadingData, setLoadingData] = useState(false);
 
-  const handleConfirmDelivery = () => {
-    if (!selectedStopForDelivery) return;
+  // Multi-pin Leaflet preview map
+  const mapContainerRef = useRef(null);
+  const leafletMapRef = useRef(null);
+  const layerGroupRef = useRef(null);
 
+  const loadAllData = async () => {
+    setLoadingData(true);
     try {
-      confetti({ particleCount: 60, spread: 55, origin: { y: 0.7 } });
-    } catch (e) {}
+      const [dbOrders, dbTrips, dbUsers] = await Promise.all([
+        fetchOrders(),
+        fetchTrips(),
+        fetchUsers()
+      ]);
 
-    setStops(stops.map(s => {
-      if (s.id === selectedStopForDelivery.id) {
-        return {
-          ...s,
-          status: 'entregado',
-          isNextStop: false
-        };
+      // Merge DB orders with fallback sample orders if DB has none pending
+      const rawOrders = Array.isArray(dbOrders) && dbOrders.length > 0 ? dbOrders : getStoredOrders();
+      const normalized = rawOrders.map((o, idx) => ({
+        orderId: o.orderId || o.id || `POLAR-${90100 + idx}`,
+        clientName: o.clientName || o.client_name || 'Cliente Polar',
+        clientPhone: o.clientPhone || o.client_phone || '',
+        address: o.address || '',
+        neighborhood: o.neighborhood || '',
+        notes: o.notes || '',
+        coords: o.coords || (o.lat && o.lng ? { lat: Number(o.lat), lng: Number(o.lng) } : {
+          lat: -31.404 + (idx * 0.0035),
+          lng: -64.191 - (idx * 0.0025)
+        }),
+        items: Array.isArray(o.items) ? o.items : [],
+        total: Number(o.total) || 0,
+        status: o.status || 'Pendiente de aprobación',
+        tripId: o.tripId || o.trip_id || null,
+        createdAt: o.createdAt || o.created_at || new Date().toISOString()
+      }));
+
+      setOrders(normalized);
+      if (!focusedOrder && normalized.length > 0) {
+        setFocusedOrder(normalized[0]);
       }
-      return s;
-    }));
 
-    // Set next pending stop as isNextStop
-    const nextIdx = stops.findIndex(s => s.status !== 'entregado' && s.id !== selectedStopForDelivery.id);
-    if (nextIdx !== -1) {
-      setStops(prev => prev.map((s, idx) => ({ ...s, isNextStop: idx === nextIdx })));
+      if (dbTrips && typeof dbTrips === 'object') {
+        const list = Object.values(dbTrips).sort((a, b) => (b.tripNumber || 0) - (a.tripNumber || 0));
+        setTripsHistory(list);
+      }
+
+      if (Array.isArray(dbUsers) && dbUsers.length > 0) {
+        const repartidores = dbUsers.filter((u) => u.role === 'repartidor');
+        if (repartidores.length > 0) {
+          const mapped = repartidores.map((u, i) => ({
+            id: u.id,
+            name: u.name,
+            phone: u.phone || '5493510000000',
+            truck: `Camión #${i + 1}`
+          }));
+          setDrivers(mapped);
+          setSelectedDriverName(mapped[0].name);
+          setDriverPhone(mapped[0].phone);
+          setTruck(mapped[0].truck);
+        }
+      }
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAllData();
+  }, []);
+
+  // Initialize Leaflet map for "armar" tab
+  useEffect(() => {
+    if (subtab !== 'armar') return;
+    if (!window.L || !mapContainerRef.current) return;
+
+    if (!leafletMapRef.current) {
+      const map = window.L.map(mapContainerRef.current, {
+        center: [-31.4089, -64.1956],
+        zoom: 13
+      });
+      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap',
+        maxZoom: 19
+      }).addTo(map);
+      leafletMapRef.current = map;
+      layerGroupRef.current = window.L.layerGroup().addTo(map);
     }
 
-    setShowDeliveryModal(false);
+    const timer = setTimeout(() => {
+      leafletMapRef.current?.invalidateSize();
+      refreshMapPins();
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [subtab]);
+
+  const refreshMapPins = () => {
+    if (!window.L || !leafletMapRef.current || !layerGroupRef.current) return;
+    layerGroupRef.current.clearLayers();
+
+    const selectedLatLngs = [];
+
+    orders.forEach((ord) => {
+      if (!ord.coords?.lat || !ord.coords?.lng) return;
+      const selIndex = selectedOrderIds.indexOf(ord.orderId);
+      const isSelected = selIndex !== -1;
+      const isFocused = focusedOrder?.orderId === ord.orderId;
+
+      const bg = isSelected ? '#0c315b' : ord.tripId ? '#9ca3af' : '#0284c7';
+      const border = isFocused ? '3px solid #f97316' : '2px solid white';
+      const label = isSelected ? `${selIndex + 1}` : '•';
+
+      const icon = window.L.divIcon({
+        className: 'custom-order-pin',
+        html: `<div style="background:${bg};width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:800;font-size:12px;border:${border};box-shadow:0 2px 6px rgba(0,0,0,0.3);cursor:pointer;">${label}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+
+      const marker = window.L.marker([ord.coords.lat, ord.coords.lng], { icon })
+        .bindPopup(`<strong>${ord.clientName}</strong><br>${ord.address}<br>$${ord.total.toLocaleString()}`)
+        .on('click', () => {
+          setFocusedOrder(ord);
+        });
+
+      marker.addTo(layerGroupRef.current);
+
+      if (isSelected) {
+        selectedLatLngs.push([ord.coords.lat, ord.coords.lng]);
+      }
+    });
+
+    if (selectedLatLngs.length > 1) {
+      window.L.polyline(selectedLatLngs, {
+        color: '#0c315b',
+        weight: 3,
+        dashArray: '6, 6'
+      }).addTo(layerGroupRef.current);
+    }
   };
 
-  const handleOpenMaps = (address) => {
-    const q = encodeURIComponent(`${address}, Buenos Aires, Argentina`);
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${q}`, '_blank');
-  };
+  useEffect(() => {
+    if (subtab === 'armar') {
+      refreshMapPins();
+    }
+  }, [orders, selectedOrderIds, focusedOrder, subtab]);
 
-  const handleSendWhatsApp = (stop) => {
-    const msg = encodeURIComponent(
-      `¡Hola ${stop.clientName}! 🚚 Desde Soda y Agua POLAR te avisamos que estamos llegando en 5 minutos a ${stop.address} con tu pedido.`
+  const toggleSelectOrder = (orderId) => {
+    setSelectedOrderIds((prev) =>
+      prev.includes(orderId) ? prev.filter((id) => id !== orderId) : [...prev, orderId]
     );
-    window.open(`https://wa.me/${stop.phone}?text=${msg}`, '_blank');
   };
+
+  const moveSelectedOrder = (idx, direction) => {
+    const nextIdx = idx + direction;
+    if (nextIdx < 0 || nextIdx >= selectedOrderIds.length) return;
+    const copy = [...selectedOrderIds];
+    const [moved] = copy.splice(idx, 1);
+    copy.splice(nextIdx, 0, moved);
+    setSelectedOrderIds(copy);
+  };
+
+  const selectedOrders = selectedOrderIds
+    .map((id) => orders.find((o) => o.orderId === id))
+    .filter(Boolean);
+
+  const handleDriverSelect = (name) => {
+    setSelectedDriverName(name);
+    const found = drivers.find((d) => d.name === name);
+    if (found) {
+      setDriverPhone(found.phone);
+      setTruck(found.truck);
+    }
+  };
+
+  const handleCreateRoute = async () => {
+    if (selectedOrders.length === 0) {
+      alert('Seleccioná al menos un pedido para armar la Hoja de Ruta.');
+      return;
+    }
+
+    setCreatingRoute(true);
+    try {
+      const stopsPayload = selectedOrders.map((o) => ({
+        orderRef: o.orderId,
+        clientName: o.clientName,
+        address: `${o.address}${o.neighborhood ? `, ${o.neighborhood}` : ''}`,
+        phone: o.clientPhone,
+        coords: o.coords,
+        items: o.items,
+        total: o.total,
+        notes: o.notes
+      }));
+
+      const res = await createTrip({
+        driverName: selectedDriverName,
+        driverPhone,
+        truck,
+        zone,
+        notes: routeNotes,
+        stops: stopsPayload
+      });
+
+      setCreatedRouteResult({
+        tripId: res.tripId,
+        tripNumber: res.tripNumber,
+        routePath: res.routePath || `/ruta${res.tripNumber}`,
+        driverName: selectedDriverName,
+        driverPhone,
+        stopsCount: selectedOrders.length
+      });
+
+      setSelectedOrderIds([]);
+      setRouteNotes('');
+      await loadAllData();
+    } catch (err) {
+      alert('Error al programar la ruta: ' + err.message);
+    } finally {
+      setCreatingRoute(false);
+    }
+  };
+
+  const handleCopyRouteLink = (tripNumber) => {
+    const url = `${window.location.origin}/ruta${tripNumber}`;
+    navigator.clipboard?.writeText(url);
+    setCopiedPath(tripNumber);
+    setTimeout(() => setCopiedPath(null), 2500);
+  };
+
+  const handleSendWhatsAppRoute = (tripNumber, dName, dPhone) => {
+    const url = `${window.location.origin}/ruta${tripNumber}`;
+    const text = encodeURIComponent(
+      `¡Hola ${dName}! 🚚 Te asignamos la *Hoja de Ruta #${tripNumber}* de Soda y Agua POLAR.\n\n` +
+      `Abrí este link desde tu celular para ver el mapa, las paradas y registrar cada entrega:\n` +
+      `🔗 ${url}`
+    );
+    window.open(`https://wa.me/${dPhone}?text=${text}`, '_blank');
+  };
+
+  const getOsmIframeUrl = (coords) => {
+    if (!coords?.lat || !coords?.lng) {
+      return 'https://www.openstreetmap.org/export/embed.html?bbox=-64.225,-31.430,-64.165,-31.385&layer=mapnik';
+    }
+    const d = 0.008;
+    const bbox = `${coords.lng - d},${coords.lat - d},${coords.lng + d},${coords.lat + d}`;
+    return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${coords.lat},${coords.lng}`;
+  };
+
+  const filteredHistory = tripsHistory.filter((t) => {
+    if (historyFilter === 'todos') return true;
+    return t.status === historyFilter;
+  });
 
   return (
-    <div className="max-w-xl mx-auto space-y-3 pb-8">
-      
-      {/* Subtabs matching visual-mobile.png: REPARTO | REPARTOS PROGRAMADOS */}
-      <div className="flex items-center space-x-6 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-500 pt-1">
-        <button
-          onClick={() => setSubtab('reparto')}
-          className={`pb-2 transition border-b-2 ${
-            subtab === 'reparto'
-              ? 'border-[#0c315b] text-[#0c315b] font-bold'
-              : 'border-transparent hover:text-gray-900'
-          }`}
-        >
-          Reparto
-        </button>
-        <button
-          onClick={() => setSubtab('programados')}
-          className={`pb-2 transition border-b-2 ${
-            subtab === 'programados'
-              ? 'border-[#0c315b] text-[#0c315b] font-bold'
-              : 'border-transparent hover:text-gray-900'
-          }`}
-        >
-          Repartos Programados
-        </button>
-      </div>
-
-      {/* Header: "3 de 8 entregados" with action icons */}
-      <div className="flex items-center justify-between pt-1">
-        <h2 className="text-base font-extrabold text-gray-900">
-          {deliveredCount} de {totalStops} entregados
-        </h2>
-        <div className="flex items-center space-x-2 text-gray-500">
-          <button className="p-1 hover:text-gray-900" title="Actualizar">
-            <RotateCw className="w-4 h-4" />
-          </button>
-          <button className="p-1 hover:text-gray-900" title="Agregar parada">
-            <Plus className="w-4 h-4" />
-          </button>
-          <button 
-            onClick={() => onOpenComprobante(stops[6])}
-            className="p-1 hover:text-gray-900" 
-            title="Ver comprobante"
-          >
-            <FileText className="w-4 h-4" />
-          </button>
+    <div className="space-y-4 pb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">
+            Repartir — Armar Hoja de Ruta
+          </h1>
+          <p className="text-xs text-gray-500">
+            Seleccioná pedidos en el mapa, asignalos a un repartidor y generá su link exclusivo /rutaXX
+          </p>
         </div>
-      </div>
 
-      {/* Toggle buttons: [📋 Pedidos] (selected) vs [🗺️ Mapa] (matching visual-mobile.png) */}
-      <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl text-xs font-bold">
         <button
-          onClick={() => setMode('pedidos')}
-          className={`py-2.5 rounded-lg flex items-center justify-center space-x-1.5 transition ${
-            mode === 'pedidos'
-              ? 'bg-[#0c315b] text-white shadow-xs'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
+          onClick={loadAllData}
+          className="self-start sm:self-auto px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 flex items-center space-x-1.5 shadow-2xs"
         >
-          <ClipboardList className="w-4 h-4" />
-          <span>Pedidos</span>
-        </button>
-        <button
-          onClick={() => setMode('mapa')}
-          className={`py-2.5 rounded-lg flex items-center justify-center space-x-1.5 transition ${
-            mode === 'mapa'
-              ? 'bg-[#0c315b] text-white shadow-xs'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          <MapIcon className="w-4 h-4" />
-          <span>Mapa</span>
+          <RotateCw className={`w-3.5 h-3.5 ${loadingData ? 'animate-spin' : ''}`} />
+          <span>Actualizar</span>
         </button>
       </div>
 
-      {/* ===================== MODE 1: PEDIDOS LIST ===================== */}
-      {mode === 'pedidos' && (
-        <div className="space-y-3">
-          
-          {/* Search box with outline style */}
-          <div className="relative">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Buscar por cliente, teléfono o dirección"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2.5 bg-white border border-gray-300 rounded-xl text-xs text-gray-800 placeholder-gray-400 focus:border-[#0c315b] outline-none shadow-2xs"
-            />
-          </div>
+      {/* Subtabs */}
+      <div className="flex items-center space-x-6 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-500">
+        <button
+          onClick={() => setSubtab('armar')}
+          className={`pb-2.5 transition border-b-2 flex items-center gap-1.5 ${
+            subtab === 'armar'
+              ? 'border-[#0c315b] text-[#0c315b] font-bold'
+              : 'border-transparent hover:text-gray-900'
+          }`}
+        >
+          <Route className="w-4 h-4" />
+          <span>Programar Ruta</span>
+        </button>
+        <button
+          onClick={() => setSubtab('historial')}
+          className={`pb-2.5 transition border-b-2 flex items-center gap-1.5 ${
+            subtab === 'historial'
+              ? 'border-[#0c315b] text-[#0c315b] font-bold'
+              : 'border-transparent hover:text-gray-900'
+          }`}
+        >
+          <History className="w-4 h-4" />
+          <span>Historial de Hojas de Ruta ({tripsHistory.length})</span>
+        </button>
+      </div>
 
-          {/* Stops List */}
-          <div className="space-y-3">
-            {stops
-              .filter(s => 
-                s.clientName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                s.address.toLowerCase().includes(searchTerm.toLowerCase())
-              )
-              .map((stop) => {
-                const isNext = stop.isNextStop && stop.status !== 'entregado';
-                const isDelivered = stop.status === 'entregado';
+      {/* ===================== TAB 1: ARMAR RUTA ===================== */}
+      {subtab === 'armar' && (
+        <div className="space-y-4">
+          {createdRouteResult && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2 text-emerald-800 font-extrabold text-sm">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  <span>¡Hoja de Ruta #{createdRouteResult.tripNumber} programada!</span>
+                </div>
+                <p className="text-xs text-emerald-700">
+                  Asignada a <strong>{createdRouteResult.driverName}</strong> con {createdRouteResult.stopsCount} paradas. Link: <code className="font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-emerald-200">{createdRouteResult.routePath}</code>
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <button
+                  onClick={() => handleCopyRouteLink(createdRouteResult.tripNumber)}
+                  className="px-3 py-2 rounded-lg bg-white border border-emerald-300 font-bold text-emerald-800 hover:bg-emerald-100 flex items-center space-x-1"
+                >
+                  {copiedPath === createdRouteResult.tripNumber ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedPath === createdRouteResult.tripNumber ? '¡Copiado!' : 'Copiar /ruta' + createdRouteResult.tripNumber}</span>
+                </button>
+                <button
+                  onClick={() => handleSendWhatsAppRoute(createdRouteResult.tripNumber, createdRouteResult.driverName, createdRouteResult.driverPhone)}
+                  className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center space-x-1"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>Enviar al Chofer</span>
+                </button>
+                <button
+                  onClick={() => onOpenDriverTrip && onOpenDriverTrip(`VIAJE-${createdRouteResult.tripNumber}`, createdRouteResult.tripNumber)}
+                  className="px-3 py-2 rounded-lg bg-[#0c315b] hover:bg-[#082342] text-white font-bold flex items-center space-x-1"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Abrir /ruta{createdRouteResult.tripNumber}</span>
+                </button>
+              </div>
+            </div>
+          )}
 
-                return (
-                  <div
-                    key={stop.id}
-                    className={`rounded-2xl transition border overflow-hidden bg-white shadow-2xs ${
-                      isNext 
-                        ? 'border-2 border-[#0c315b] ring-2 ring-sky-100' 
-                        : isDelivered
-                        ? 'border-gray-200 opacity-75'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    {/* Top banner: PRÓXIMA PARADA (matching visual-mobile.png) */}
-                    {isNext && (
-                      <div className="bg-[#0c315b] text-white px-3 py-1 flex items-center justify-between text-[11px] font-extrabold uppercase tracking-wider">
-                        <span className="flex items-center gap-1">
-                          📍 PRÓXIMA PARADA
-                        </span>
-                        <span className="text-[10px] text-sky-200">Parada #{stop.orderNumber}</span>
-                      </div>
-                    )}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* LEFT: Orders list + Map */}
+            <div className="lg:col-span-7 space-y-4">
+              {/* Interactive Multi-Pin Map + Focused Order Iframe */}
+              <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 shadow-2xs space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <h2 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                    <MapPin className="w-4 h-4 text-[#0c315b]" />
+                    <span>Mapa de Pedidos y Recorrido</span>
+                  </h2>
+                  <span className="text-[11px] text-gray-500">
+                    Azul: disponible · Marino numerado: seleccionado
+                  </span>
+                </div>
 
-                    <div className="p-4 space-y-2.5">
-                      
-                      {/* Top Row: Order # + Client Name + Actions */}
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center space-x-2">
-                          <span className={`w-7 h-7 rounded-lg font-bold text-xs flex items-center justify-center ${
-                            isDelivered
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : isNext
-                              ? 'bg-[#0c315b] text-white'
-                              : 'bg-gray-100 text-gray-700'
-                          }`}>
-                            {isDelivered ? '✓' : `#${stop.orderNumber}`}
-                          </span>
-                          <div>
-                            <h3 className="font-bold text-gray-900 text-sm leading-tight">
-                              #{stop.id} - {stop.clientName}
-                            </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Interactive Leaflet Map with all order pins */}
+                  <div className="relative h-56 sm:h-64 rounded-xl overflow-hidden border border-gray-200 bg-slate-100">
+                    <div ref={mapContainerRef} className="w-full h-full z-0" />
+                  </div>
+
+                  {/* Small OpenStreetMap Iframe of the focused order */}
+                  <div className="flex flex-col h-56 sm:h-64 rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
+                    <div className="px-2.5 py-1.5 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between">
+                      <span className="font-bold text-[#0c315b] truncate">
+                        {focusedOrder ? `📍 ${focusedOrder.clientName}` : 'Vista Satelital / Calle'}
+                      </span>
+                      <span className="text-gray-400 truncate max-w-[120px]">
+                        {focusedOrder?.address || ''}
+                      </span>
+                    </div>
+                    <iframe
+                      title="Mapa del pedido"
+                      src={getOsmIframeUrl(focusedOrder?.coords)}
+                      className="w-full flex-1 border-0"
+                      loading="lazy"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Selectable Orders List */}
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-gray-900">
+                    Pedidos Disponibles ({orders.length})
+                  </h3>
+                  <span className="text-xs font-bold text-[#0c315b]">
+                    {selectedOrderIds.length} seleccionados
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                  {orders.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-gray-400">
+                      No hay pedidos cargados todavía. Los pedidos ingresados desde /cliente aparecerán aquí.
+                    </div>
+                  ) : orders.map((ord) => {
+                    const isSelected = selectedOrderIds.includes(ord.orderId);
+                    const isFocused = focusedOrder?.orderId === ord.orderId;
+                    const alreadyAssigned = Boolean(ord.tripId);
+
+                    return (
+                      <div
+                        key={ord.orderId}
+                        onClick={() => setFocusedOrder(ord)}
+                        className={`p-3 rounded-xl border transition cursor-pointer flex items-start justify-between gap-3 ${
+                          isSelected
+                            ? 'border-[#0c315b] bg-sky-50/50 ring-1 ring-[#0c315b]/20'
+                            : isFocused
+                            ? 'border-orange-300 bg-orange-50/20'
+                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                        }`}
+                      >
+                        <div className="flex items-start space-x-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              toggleSelectOrder(ord.orderId);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-1 rounded text-[#0c315b] w-4 h-4 cursor-pointer flex-shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-mono text-[11px] font-bold text-gray-500">#{ord.orderId}</span>
+                              <strong className="text-xs sm:text-sm text-gray-900 truncate">{ord.clientName}</strong>
+                              {alreadyAssigned && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                                  En {ord.tripId}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-600 mt-0.5">
+                              📍 {ord.address}{ord.neighborhood ? ` (${ord.neighborhood})` : ''}
+                            </p>
+                            <p className="text-[11px] text-gray-500 mt-0.5">
+                              {ord.items.map((it) => `${it.qty}x ${it.name}`).join(', ') || 'Pedido Polar'}
+                            </p>
                           </div>
                         </div>
 
-                        {/* Action Icons: Map, WhatsApp, Phone */}
-                        <div className="flex items-center space-x-2 text-gray-500">
-                          <button 
-                            onClick={() => handleOpenMaps(stop.address)}
-                            className="p-1 hover:text-[#0c315b]" 
-                            title="Abrir mapa"
-                          >
-                            <MapPin className="w-4 h-4 text-sky-600" />
-                          </button>
-                          <button 
-                            onClick={() => handleSendWhatsApp(stop)}
-                            className="p-1 hover:text-emerald-600" 
-                            title="WhatsApp"
-                          >
-                            <MessageCircle className="w-4 h-4 text-emerald-600" />
-                          </button>
-                          <button 
-                            onClick={() => window.open(`tel:${stop.phone}`)}
-                            className="p-1 hover:text-[#0c315b]" 
-                            title="Llamar"
-                          >
-                            <Phone className="w-4 h-4 text-gray-600" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Address */}
-                      <div className="text-xs text-gray-600 flex items-center gap-1">
-                        <span className="text-gray-400">📍</span>
-                        <span className="font-medium text-gray-800">{stop.address}</span>
-                      </div>
-
-                      {/* Last Delivery note */}
-                      <div className="text-[11px] text-amber-700 bg-amber-50/70 px-2 py-1 rounded-md border border-amber-200/60 font-medium">
-                        Última entrega: {stop.lastDelivery}
-                      </div>
-
-                      {/* Saldo, Hora y Badge de Estado */}
-                      <div className="flex items-center justify-between text-xs pt-1">
-                        <div>
-                          <span className="text-gray-500">Saldo: </span>
-                          <strong className={stop.balance < 0 ? 'text-rose-600 font-bold' : 'text-gray-900 font-bold'}>
-                            {stop.balance < 0 ? `$-${Math.abs(stop.balance).toFixed(2)}` : '$0.00'}
-                          </strong>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <span className="text-[11px] text-gray-400 font-mono">{stop.time}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            isDelivered
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-sky-100 text-[#0c315b]'
-                          }`}>
-                            {isDelivered ? 'Entregado' : 'En camino'}
+                        <div className="text-right flex-shrink-0">
+                          <span className="font-black text-sm text-[#0c315b] block">
+                            ${Number(ord.total || 0).toLocaleString()}
+                          </span>
+                          <span className="text-[10px] text-gray-400 block mt-0.5">
+                            {ord.status}
                           </span>
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
 
-                      {/* Action buttons on card (especially for Next Stop or pending) */}
-                      {!isDelivered && (
-                        <div className="pt-2 border-t border-gray-100 grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() => onOpenComprobante(stop)}
-                            className="py-2 px-3 rounded-lg border border-gray-300 text-gray-700 font-semibold text-xs hover:bg-gray-50 transition"
-                          >
-                            Ver Comprobante
-                          </button>
-                          
-                          <button
-                            onClick={() => handleStartDelivery(stop)}
-                            className="py-2 px-3 rounded-lg bg-[#0c315b] hover:bg-[#082342] text-white font-bold text-xs flex items-center justify-center space-x-1 transition shadow-xs"
-                          >
-                            <span>Entregar</span>
-                          </button>
-                        </div>
-                      )}
+            {/* RIGHT: Route Builder & Driver Assignment */}
+            <div className="lg:col-span-5">
+              <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 shadow-2xs space-y-4 sticky top-18">
+                <div className="flex items-center space-x-2 border-b border-gray-100 pb-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#0c315b] text-white flex items-center justify-center">
+                    <Truck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-gray-900">Programar Hoja de Ruta</h3>
+                    <span className="text-[11px] text-gray-500">Se creará el link /rutaXX para el chofer</span>
+                  </div>
+                </div>
 
-                      {isDelivered && (
-                        <div className="pt-1 text-right">
-                          <button
-                            onClick={() => onOpenComprobante(stop)}
-                            className="text-[11px] font-bold text-sky-700 hover:underline"
-                          >
-                            Ver comprobante firmado →
-                          </button>
-                        </div>
-                      )}
+                {/* Driver & Truck Inputs */}
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="font-bold text-gray-700 block mb-1">Repartidor Asignado</label>
+                    <select
+                      value={selectedDriverName}
+                      onChange={(e) => handleDriverSelect(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white font-semibold text-gray-900 outline-none focus:border-[#0c315b]"
+                    >
+                      {drivers.map((d) => (
+                        <option key={d.id} value={d.name}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
 
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="font-bold text-gray-700 block mb-1">Vehículo / Camión</label>
+                      <input
+                        type="text"
+                        value={truck}
+                        onChange={(e) => setTruck(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-[#0c315b]"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-gray-700 block mb-1">Zona del Reparto</label>
+                      <input
+                        type="text"
+                        value={zone}
+                        onChange={(e) => setZone(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-[#0c315b]"
+                      />
                     </div>
                   </div>
-                );
-              })}
-          </div>
 
-        </div>
-      )}
-
-      {/* ===================== MODE 2: MAPA INTERACTIVO (matching visual-mobile.png right screen) ===================== */}
-      {mode === 'mapa' && (
-        <div className="space-y-3">
-          
-          {/* Progress bar: 3/8 completados */}
-          <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-2xs">
-            <div className="flex justify-between items-center text-xs font-bold text-gray-700 mb-1.5">
-              <span>Progreso del reparto</span>
-              <span className="text-[#0c315b]">{deliveredCount}/{totalStops} completados</span>
-            </div>
-            <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-[#0c315b] rounded-full transition-all duration-300"
-                style={{ width: `${(deliveredCount / totalStops) * 100}%` }}
-              ></div>
-            </div>
-
-            {/* Legend */}
-            <div className="flex items-center justify-between mt-3 text-[10px] text-gray-600 font-medium pt-2 border-t border-gray-100">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-sky-500"></span>
-                En camino
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                Entregado
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                Ausente
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                Cancelado
-              </span>
-            </div>
-          </div>
-
-          {/* Map view */}
-          <div className="relative border border-gray-200 rounded-2xl overflow-hidden h-96 bg-slate-100 shadow-2xs">
-            
-            {/* SVG Map Illustration with 8 numbered points and route line */}
-            <svg className="w-full h-full object-cover" viewBox="0 0 600 700" preserveAspectRatio="none">
-              <rect width="600" height="700" fill="#f4f4f2" />
-              {/* Streets */}
-              <line x1="100" y1="0" x2="100" y2="700" stroke="#e3e3df" strokeWidth="4" />
-              <line x1="220" y1="0" x2="220" y2="700" stroke="#e3e3df" strokeWidth="4" />
-              <line x1="360" y1="0" x2="360" y2="700" stroke="#e3e3df" strokeWidth="4" />
-              <line x1="500" y1="0" x2="500" y2="700" stroke="#e3e3df" strokeWidth="4" />
-              <line x1="0" y1="120" x2="600" y2="120" stroke="#e3e3df" strokeWidth="4" />
-              <line x1="0" y1="260" x2="600" y2="260" stroke="#e3e3df" strokeWidth="4" />
-              <line x1="0" y1="420" x2="600" y2="420" stroke="#e3e3df" strokeWidth="4" />
-              <line x1="0" y1="580" x2="600" y2="580" stroke="#e3e3df" strokeWidth="4" />
-              
-              {/* Diagonal avenue */}
-              <line x1="50" y1="650" x2="550" y2="50" stroke="#dadad5" strokeWidth="8" />
-
-              {/* Red dashed route line */}
-              <path 
-                d="M 470 120 L 390 190 L 310 260 L 320 360 L 370 480 L 440 540" 
-                fill="none" 
-                stroke="#0c315b" 
-                strokeWidth="3.5" 
-                strokeDasharray="6,4" 
-              />
-
-              {/* Completed Pins (Green) */}
-              <g transform="translate(470, 120)"><circle r="14" fill="#10b981" /><text textAnchor="middle" dy="4" fill="white" fontSize="11" fontWeight="bold">1</text></g>
-              <g transform="translate(390, 190)"><circle r="14" fill="#10b981" /><text textAnchor="middle" dy="4" fill="white" fontSize="11" fontWeight="bold">2</text></g>
-              <g transform="translate(310, 260)"><circle r="14" fill="#10b981" /><text textAnchor="middle" dy="4" fill="white" fontSize="11" fontWeight="bold">3</text></g>
-
-              {/* Current Active Pin #4 (Polar Navy Highlight with pulse) */}
-              <g transform="translate(320, 360)">
-                <circle r="20" fill="#0c315b" opacity="0.3" className="animate-ping" />
-                <circle r="16" fill="#0c315b" />
-                <text textAnchor="middle" dy="4" fill="white" fontSize="12" fontWeight="bold">4</text>
-              </g>
-
-              {/* Pending Pins (Sky Blue) */}
-              <g transform="translate(370, 480)"><circle r="14" fill="#0284c7" /><text textAnchor="middle" dy="4" fill="white" fontSize="11" fontWeight="bold">5</text></g>
-              <g transform="translate(440, 540)"><circle r="14" fill="#0284c7" /><text textAnchor="middle" dy="4" fill="white" fontSize="11" fontWeight="bold">6</text></g>
-              <g transform="translate(230, 520)"><circle r="14" fill="#0284c7" /><text textAnchor="middle" dy="4" fill="white" fontSize="11" fontWeight="bold">7</text></g>
-              <g transform="translate(180, 420)"><circle r="14" fill="#0284c7" /><text textAnchor="middle" dy="4" fill="white" fontSize="11" fontWeight="bold">8</text></g>
-            </svg>
-
-            {/* Bottom floating card in map (matching visual-mobile.png right screen) */}
-            <div className="absolute bottom-3 left-3 right-3 bg-white p-3.5 rounded-xl border border-gray-200 shadow-md space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-1.5">
-                  <span className="w-5 h-5 rounded-md bg-[#0c315b] text-white font-bold text-xs flex items-center justify-center">
-                    #4
-                  </span>
-                  <span className="font-bold text-xs text-gray-900">María Esther López</span>
-                </div>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-[#0c315b]">
-                  En camino
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-600">Camargo 460, Villa Crespo</p>
-              
-              <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1">
-                <span>Saldo: <strong className="text-gray-900">$0.00</strong></span>
-                <span className="text-amber-700 font-medium">Última: hace 2 días · 2x Bidón 20L</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <button 
-                  onClick={() => handleSendWhatsApp(stops[3])}
-                  className="py-1.5 rounded-lg border border-emerald-500 text-emerald-700 font-bold text-xs hover:bg-emerald-50 transition"
-                >
-                  Avisar llegada
-                </button>
-                <button 
-                  onClick={() => handleStartDelivery(stops[3])}
-                  className="py-1.5 rounded-lg bg-[#0c315b] hover:bg-[#082342] text-white font-bold text-xs transition"
-                >
-                  Entregar
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Big green button at the bottom: [✓ Finalizar reparto] */}
-          <button 
-            onClick={() => alert('¡Reparto de hoy finalizado exitosamente! Todos los datos fueron sincronizados.')}
-            className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm flex items-center justify-center space-x-2 shadow-sm transition"
-          >
-            <CheckCircle className="w-5 h-5" />
-            <span>Finalizar reparto</span>
-          </button>
-        </div>
-      )}
-
-      {/* ===================== MODAL DE ENTREGA (FORMULARIO DEL CHOFER) ===================== */}
-      {showDeliveryModal && selectedStopForDelivery && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-2xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-xl border border-gray-200">
-            
-            <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
-              <div>
-                <h3 className="font-extrabold text-gray-900 text-sm">Registrar Entrega</h3>
-                <p className="text-xs text-gray-500">{selectedStopForDelivery.clientName}</p>
-              </div>
-              <button 
-                onClick={() => setShowDeliveryModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-700 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Productos Llenos que se Bajan */}
-            <div>
-              <span className="text-[11px] font-bold text-gray-500 uppercase block mb-1.5">
-                1. Bidones Llenos a Dejar
-              </span>
-              <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-200 space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-gray-800">Bidón 20L ($4.200)</span>
-                  <div className="flex items-center space-x-2">
-                    <button 
-                      onClick={() => setDeliveredQty20L(Math.max(0, deliveredQty20L - 1))}
-                      className="w-6 h-6 rounded bg-white border border-gray-300 font-bold"
-                    >-</button>
-                    <span className="font-black text-sm w-4 text-center">{deliveredQty20L}</span>
-                    <button 
-                      onClick={() => setDeliveredQty20L(deliveredQty20L + 1)}
-                      className="w-6 h-6 rounded bg-[#0c315b] text-white font-bold"
-                    >+</button>
+                  <div>
+                    <label className="font-bold text-gray-700 block mb-1">WhatsApp del Chofer</label>
+                    <input
+                      type="text"
+                      value={driverPhone}
+                      onChange={(e) => setDriverPhone(e.target.value)}
+                      placeholder="549351..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-[#0c315b]"
+                    />
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-gray-800">Sifón Soda ($1.300)</span>
-                  <div className="flex items-center space-x-2">
-                    <button 
-                      onClick={() => setDeliveredQtySoda(Math.max(0, deliveredQtySoda - 1))}
-                      className="w-6 h-6 rounded bg-white border border-gray-300 font-bold"
-                    >-</button>
-                    <span className="font-black text-sm w-4 text-center">{deliveredQtySoda}</span>
-                    <button 
-                      onClick={() => setDeliveredQtySoda(deliveredQtySoda + 1)}
-                      className="w-6 h-6 rounded bg-[#0c315b] text-white font-bold"
-                    >+</button>
+                {/* Ordered Stops Preview */}
+                <div className="border-t border-gray-100 pt-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-gray-700">
+                      Orden de Paradas ({selectedOrders.length})
+                    </span>
+                    {selectedOrders.length > 0 && (
+                      <button
+                        onClick={() => setSelectedOrderIds([])}
+                        className="text-[11px] text-rose-600 hover:underline font-semibold"
+                      >
+                        Limpiar selección
+                      </button>
+                    )}
                   </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Envases Vacíos Retirados (Control de Trazabilidad) */}
-            <div>
-              <span className="text-[11px] font-bold text-gray-500 uppercase block mb-1.5">
-                2. Envases Vacíos Retirados
-              </span>
-              <div className="bg-sky-50/60 p-2.5 rounded-xl border border-sky-100 flex justify-between items-center text-xs">
-                <span className="font-semibold text-gray-800">Bidones 20L Retornados</span>
-                <div className="flex items-center space-x-2">
-                  <button 
-                    onClick={() => setCollectedEmpty20L(Math.max(0, collectedEmpty20L - 1))}
-                    className="w-6 h-6 rounded bg-white border border-gray-300 font-bold"
-                  >-</button>
-                  <span className="font-black text-sm w-4 text-center">{collectedEmpty20L}</span>
-                  <button 
-                    onClick={() => setCollectedEmpty20L(collectedEmpty20L + 1)}
-                    className="w-6 h-6 rounded bg-[#0c315b] text-white font-bold"
-                  >+</button>
-                </div>
-              </div>
-            </div>
+                  {selectedOrders.length === 0 ? (
+                    <div className="p-4 rounded-xl bg-gray-50 border border-dashed border-gray-300 text-center text-xs text-gray-400">
+                      Marcá los pedidos de la lista para agregarlos a esta Hoja de Ruta.
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                      {selectedOrders.map((ord, idx) => (
+                        <div
+                          key={ord.orderId}
+                          className="flex items-center justify-between gap-2 p-2 rounded-lg bg-gray-50 border border-gray-200 text-xs"
+                        >
+                          <div className="flex items-center space-x-2 min-w-0">
+                            <span className="w-5 h-5 rounded bg-[#0c315b] text-white font-bold text-[10px] flex items-center justify-center flex-shrink-0">
+                              {idx + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <strong className="text-gray-900 block truncate">{ord.clientName}</strong>
+                              <span className="text-[10px] text-gray-500 block truncate">{ord.address}</span>
+                            </div>
+                          </div>
 
-            {/* Medio de Pago */}
-            <div>
-              <span className="text-[11px] font-bold text-gray-500 uppercase block mb-1.5">
-                3. Medio de Pago
-              </span>
-              <div className="grid grid-cols-3 gap-1.5 text-xs">
-                {['Efectivo', 'Transferencia', 'Fiado'].map((m) => (
+                          <div className="flex items-center space-x-1 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => moveSelectedOrder(idx, -1)}
+                              disabled={idx === 0}
+                              className="p-1 text-gray-500 hover:text-[#0c315b] disabled:opacity-30"
+                              title="Subir"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveSelectedOrder(idx, 1)}
+                              disabled={idx === selectedOrders.length - 1}
+                              className="p-1 text-gray-500 hover:text-[#0c315b] disabled:opacity-30"
+                              title="Bajar"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleSelectOrder(ord.orderId)}
+                              className="p-1 text-gray-400 hover:text-rose-600"
+                              title="Quitar"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-gray-100 space-y-2">
+                  <div className="flex justify-between text-xs font-bold">
+                    <span className="text-gray-600">Total estimado de ruta:</span>
+                    <span className="text-base font-black text-[#0c315b]">
+                      ${selectedOrders.reduce((s, o) => s + Number(o.total || 0), 0).toLocaleString()}
+                    </span>
+                  </div>
+
                   <button
-                    key={m}
                     type="button"
-                    onClick={() => setPaymentType(m)}
-                    className={`py-1.5 rounded-lg font-bold border transition ${
-                      paymentType === m
-                        ? 'bg-[#0c315b] text-white border-[#0c315b]'
-                        : 'bg-gray-50 text-gray-700 border-gray-200'
-                    }`}
+                    disabled={creatingRoute || selectedOrders.length === 0}
+                    onClick={handleCreateRoute}
+                    className="w-full py-3 rounded-xl bg-[#0c315b] hover:bg-[#082342] disabled:opacity-50 text-white font-extrabold text-xs uppercase tracking-wider flex items-center justify-center space-x-2 shadow-md transition"
                   >
-                    {m}
+                    {creatingRoute ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Generando Hoja de Ruta...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        <span>Programar Ruta y Asignar Chofer</span>
+                      </>
+                    )}
                   </button>
-                ))}
+                </div>
               </div>
             </div>
-
-            <div className="pt-2 border-t border-gray-100 flex justify-between items-center text-sm font-bold">
-              <span>Total a cobrar:</span>
-              <span className="text-base font-black text-[#0c315b]">
-                ${((deliveredQty20L * 4200) + (deliveredQtySoda * 1300)).toLocaleString()}
-              </span>
-            </div>
-
-            <button
-              onClick={handleConfirmDelivery}
-              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs transition shadow-xs flex items-center justify-center space-x-1.5"
-            >
-              <Check className="w-4 h-4" />
-              <span>CONFIRMAR ENTREGA</span>
-            </button>
-
           </div>
         </div>
       )}
 
+      {/* ===================== TAB 2: HISTORIAL DE HOJAS DE RUTA ===================== */}
+      {subtab === 'historial' && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 shadow-2xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-gray-900">Historial de Hojas de Ruta</h2>
+              <p className="text-xs text-gray-500">
+                Todas las rutas generadas, estado en tiempo real, entregas, ausentes y acceso directo a /rutaXX.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-1.5 text-xs bg-gray-100 p-1 rounded-lg self-start">
+              {[
+                { id: 'todos', label: 'Todas' },
+                { id: 'en_curso', label: 'En curso' },
+                { id: 'finalizada', label: 'Finalizadas' }
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setHistoryFilter(f.id)}
+                  className={`px-3 py-1 rounded-md font-bold transition ${
+                    historyFilter === f.id ? 'bg-white text-[#0c315b] shadow-2xs' : 'text-gray-500'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {filteredHistory.map((trip) => {
+              const stops = trip.stops || [];
+              const delivered = stops.filter((s) => s.status === 'entregado');
+              const absent = stops.filter((s) => s.status === 'ausente');
+              const cancelled = stops.filter((s) => s.status === 'cancelado');
+              const totalCollected = delivered.reduce((acc, s) => acc + Number(s.total || 0), 0);
+              const totalEmpty = delivered.reduce((acc, s) => acc + Number(s.returnedEmpty || 0), 0);
+              const isExpanded = expandedTripId === trip.id;
+              const isFinished = trip.status === 'finalizada';
+
+              return (
+                <div key={trip.id} className="border border-gray-200 rounded-xl overflow-hidden bg-white">
+                  <div className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-black text-sm text-[#0c315b]">
+                          Hoja de Ruta #{trip.tripNumber}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          isFinished ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-[#0c315b]'
+                        }`}>
+                          {isFinished ? 'Finalizada' : 'En curso'}
+                        </span>
+                        <code className="text-[11px] font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-700">
+                          /ruta{trip.tripNumber}
+                        </code>
+                      </div>
+
+                      <p className="text-xs text-gray-700 font-semibold">
+                        🚚 {trip.driverName} · {trip.truck} · {trip.zone}
+                      </p>
+
+                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500">
+                        <span>✓ {delivered.length}/{stops.length} entregadas</span>
+                        {absent.length > 0 && <span className="text-amber-600 font-semibold">⚠ {absent.length} ausentes</span>}
+                        {cancelled.length > 0 && <span className="text-rose-600 font-semibold">✕ {cancelled.length} canceladas</span>}
+                        <span className="font-bold text-gray-800">Cobrado: ${totalCollected.toLocaleString()}</span>
+                        <span>Vacíos: {totalEmpty}</span>
+                        <span>Últ. act: {trip.lastUpdate || '—'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <button
+                        onClick={() => handleCopyRouteLink(trip.tripNumber)}
+                        className="px-2.5 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 font-semibold text-gray-700 flex items-center space-x-1"
+                      >
+                        {copiedPath === trip.tripNumber ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedPath === trip.tripNumber ? 'Copiado' : `Copiar /ruta${trip.tripNumber}`}</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleSendWhatsAppRoute(trip.tripNumber, trip.driverName, trip.driverPhone)}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center space-x-1"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>WhatsApp</span>
+                      </button>
+
+                      <button
+                        onClick={() => onOpenDriverTrip && onOpenDriverTrip(trip.id, trip.tripNumber)}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#0c315b] hover:bg-[#082342] text-white font-bold flex items-center space-x-1"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Abrir</span>
+                      </button>
+
+                      <button
+                        onClick={() => setExpandedTripId(isExpanded ? null : trip.id)}
+                        className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 text-gray-600"
+                        title="Ver paradas"
+                      >
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="border-t border-gray-100 bg-gray-50 p-3 sm:p-4 space-y-2 text-xs">
+                      {stops.map((st) => (
+                        <div key={st.id} className="bg-white p-2.5 rounded-lg border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="w-6 h-6 rounded bg-gray-100 font-bold text-gray-700 flex items-center justify-center text-[11px]">
+                              #{st.orderNumber}
+                            </span>
+                            <div>
+                              <strong className="text-gray-900">{st.clientName}</strong>
+                              <span className="text-gray-500 block text-[11px]">{st.address}</span>
+                              {st.skipReason && (
+                                <span className="text-[10px] text-amber-700 font-semibold block">Motivo: {st.skipReason}</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between sm:justify-end gap-3">
+                            <span className="font-bold text-[#0c315b]">${Number(st.total || 0).toLocaleString()}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                              st.status === 'entregado'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : st.status === 'ausente'
+                                ? 'bg-amber-100 text-amber-800'
+                                : st.status === 'cancelado'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-sky-100 text-[#0c315b]'
+                            }`}>
+                              {st.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
