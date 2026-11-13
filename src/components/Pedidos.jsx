@@ -3,9 +3,11 @@ import {
   Search, 
   Plus, 
   X,
-  RotateCw
+  RotateCw,
+  Trash2,
+  Package
 } from 'lucide-react';
-import { fetchOrders, createOrder } from '../services/api';
+import { fetchOrders, createOrder, fetchProducts } from '../services/api';
 import { getStoredOrders } from '../services/tripSync';
 
 export default function Pedidos() {
@@ -17,13 +19,17 @@ export default function Pedidos() {
   const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
+  // Available catalog products
+  const [catalogProducts, setCatalogProducts] = useState([]);
+
   // Create order form
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [address, setAddress] = useState('');
   const [neighborhood, setNeighborhood] = useState('Alberdi');
-  const [qty20L, setQty20L] = useState(2);
-  const [qtySoda, setQtySoda] = useState(0);
+  const [orderItems, setOrderItems] = useState([]);
+  const [selectedProdId, setSelectedProdId] = useState('');
+  const [selectedQty, setSelectedQty] = useState(1);
 
   const loadOrders = async () => {
     setLoading(true);
@@ -50,30 +56,102 @@ export default function Pedidos() {
     }
   };
 
+  const loadProducts = async () => {
+    try {
+      const prods = await fetchProducts();
+      if (Array.isArray(prods) && prods.length > 0) {
+        setCatalogProducts(prods);
+        if (!selectedProdId) {
+          setSelectedProdId(prods[0].id);
+        }
+      } else {
+        const fallback = [
+          { id: 'prod-20l', name: 'Bidón de Agua de Mesa 20L', price: 4200 },
+          { id: 'prod-12l', name: 'Bidón 12L c/ canilla', price: 3300 },
+          { id: 'prod-sifon', name: 'Sifón de Soda 1,5 Litros', price: 1300 }
+        ];
+        setCatalogProducts(fallback);
+        if (!selectedProdId) setSelectedProdId(fallback[0].id);
+      }
+    } catch {
+      const fallback = [
+        { id: 'prod-20l', name: 'Bidón de Agua de Mesa 20L', price: 4200 },
+        { id: 'prod-12l', name: 'Bidón 12L c/ canilla', price: 3300 },
+        { id: 'prod-sifon', name: 'Sifón de Soda 1,5 Litros', price: 1300 }
+      ];
+      setCatalogProducts(fallback);
+      if (!selectedProdId) setSelectedProdId(fallback[0].id);
+    }
+  };
+
   useEffect(() => {
     loadOrders();
+    loadProducts();
   }, []);
+
+  const handleAddProductToOrder = () => {
+    const prod = catalogProducts.find((p) => p.id === selectedProdId) || catalogProducts[0];
+    if (!prod) return;
+    const qty = Number(selectedQty) || 1;
+    if (qty <= 0) return;
+
+    setOrderItems((prev) => {
+      const existingIdx = prev.findIndex((i) => i.id === prod.id);
+      if (existingIdx !== -1) {
+        const copy = [...prev];
+        copy[existingIdx].qty += qty;
+        return copy;
+      }
+      return [...prev, {
+        id: prod.id,
+        name: prod.name,
+        price: Number(prod.price) || 0,
+        qty
+      }];
+    });
+    setSelectedQty(1);
+  };
+
+  const handleRemoveOrderItem = (index) => {
+    setOrderItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateItemQty = (index, delta) => {
+    setOrderItems((prev) => {
+      const copy = [...prev];
+      const newQty = copy[index].qty + delta;
+      if (newQty <= 0) {
+        return copy.filter((_, i) => i !== index);
+      }
+      copy[index].qty = newQty;
+      return copy;
+    });
+  };
+
+  const orderTotal = orderItems.reduce((acc, i) => acc + (i.price * i.qty), 0);
 
   const handleCreateOrder = async (e) => {
     e.preventDefault();
-    const items = [];
-    if (qty20L > 0) items.push({ id: 'prod-20l', name: 'Bidón de Agua de Mesa 20L', qty: qty20L, price: 4200 });
-    if (qtySoda > 0) items.push({ id: 'prod-sifon', name: 'Sifón de Soda 1,5 Litros', qty: qtySoda, price: 1300 });
-    const total = items.reduce((s, i) => s + i.qty * i.price, 0);
+    if (orderItems.length === 0) {
+      alert('Por favor agregá al menos un producto al pedido.');
+      return;
+    }
 
     await createOrder({
       clientName,
       clientPhone,
       address,
       neighborhood,
-      items,
-      total,
+      items: orderItems,
+      total: orderTotal,
       status: 'Pendiente de aprobación'
     });
+
     setShowCreateModal(false);
     setClientName('');
     setClientPhone('');
     setAddress('');
+    setOrderItems([]);
     await loadOrders();
   };
 
@@ -284,31 +362,124 @@ export default function Pedidos() {
                   className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b]"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-gray-700 block mb-1">Bidones 20L ($4.200)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={qty20L}
-                    onChange={(e) => setQty20L(Number(e.target.value) || 0)}
-                    className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b]"
-                  />
+              {/* Dynamic Products Selector */}
+              <div className="space-y-2 border-t border-gray-100 pt-3">
+                <label className="font-bold text-gray-700 block text-xs">
+                  Productos del Pedido *
+                </label>
+
+                {/* Add product bar */}
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedProdId}
+                    onChange={(e) => setSelectedProdId(e.target.value)}
+                    className="flex-1 px-3 py-2 border rounded-lg text-xs bg-white outline-none focus:border-[#0c315b]"
+                  >
+                    {catalogProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} — ${Number(p.price).toLocaleString()}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="w-20">
+                    <input
+                      type="number"
+                      min="1"
+                      value={selectedQty}
+                      onChange={(e) => setSelectedQty(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full px-2 py-2 border rounded-lg text-xs text-center font-bold outline-none focus:border-[#0c315b]"
+                      placeholder="Cant."
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAddProductToOrder}
+                    className="px-3 py-2 bg-sky-50 hover:bg-sky-100 text-[#0c315b] border border-sky-200 font-bold rounded-lg text-xs flex items-center gap-1 transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Agregar</span>
+                  </button>
                 </div>
-                <div>
-                  <label className="font-bold text-gray-700 block mb-1">Sifones 1.5L ($1.300)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={qtySoda}
-                    onChange={(e) => setQtySoda(Number(e.target.value) || 0)}
-                    className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#0c315b]"
-                  />
-                </div>
+
+                {/* Items Table / List */}
+                {orderItems.length === 0 ? (
+                  <div className="text-center py-4 border border-dashed border-gray-200 rounded-xl text-xs text-gray-400 bg-gray-50/50">
+                    <Package className="w-5 h-5 mx-auto mb-1 text-gray-300" />
+                    Seleccioná productos arriba y hacé clic en "Agregar"
+                  </div>
+                ) : (
+                  <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden bg-white text-xs">
+                    {orderItems.map((item, idx) => (
+                      <div key={idx} className="p-2.5 flex items-center justify-between gap-2 hover:bg-gray-50">
+                        <div className="min-w-0 flex-1">
+                          <span className="font-bold text-gray-800 block truncate">{item.name}</span>
+                          <span className="text-[11px] text-gray-500">
+                            ${item.price.toLocaleString()} c/u
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateItemQty(idx, -1)}
+                            className="w-6 h-6 rounded border border-gray-200 bg-white hover:bg-gray-100 font-bold flex items-center justify-center text-xs"
+                          >
+                            -
+                          </button>
+                          <span className="w-6 text-center font-extrabold text-gray-900">{item.qty}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateItemQty(idx, 1)}
+                            className="w-6 h-6 rounded border border-gray-200 bg-white hover:bg-gray-100 font-bold flex items-center justify-center text-xs"
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        <span className="font-extrabold text-gray-900 w-20 text-right">
+                          ${(item.price * item.qty).toLocaleString()}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveOrderItem(idx)}
+                          className="p-1 text-gray-400 hover:text-rose-600 rounded"
+                          title="Quitar"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+
+                    <div className="p-2.5 bg-gray-50 flex items-center justify-between font-bold text-xs">
+                      <span className="text-gray-700">Total del Pedido:</span>
+                      <span className="text-base font-black text-[#0c315b]">
+                        ${orderTotal.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
+
               <div className="pt-2 flex justify-end gap-2">
-                <button type="button" onClick={() => setShowCreateModal(false)} className="px-3 py-2 border rounded-lg font-semibold text-gray-600">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-[#0c315b] text-white font-bold rounded-lg">Guardar Pedido</button>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setOrderItems([]);
+                  }} 
+                  className="px-3 py-2 border rounded-lg font-semibold text-gray-600 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-4 py-2 bg-[#0c315b] hover:bg-[#082342] text-white font-bold rounded-lg transition"
+                >
+                  Guardar Pedido (${orderTotal.toLocaleString()})
+                </button>
               </div>
             </form>
           </div>

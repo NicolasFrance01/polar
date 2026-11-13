@@ -155,6 +155,15 @@ export async function updateClient(id, clientData) {
   return data;
 }
 
+export async function deleteClient(id) {
+  const res = await fetch(`${API_BASE}/clients?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE'
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Error al eliminar cliente');
+  return data;
+}
+
 // ===================== TRIPS & DRIVER LIVE SYNC =====================
 export async function fetchTrips() {
   try {

@@ -6,6 +6,7 @@ import Repartos from './components/Repartos';
 import Pedidos from './components/Pedidos';
 import Clientes from './components/Clientes';
 import Productos from './components/Productos';
+import Referidos from './components/Referidos';
 import ComprobanteModal from './components/ComprobanteModal';
 import ClientPublicPortal from './components/ClientPublicPortal';
 import AdminLoginModal from './components/AdminLoginModal';
@@ -395,18 +396,7 @@ export default function App() {
           )}
 
           {activeTab === 'referidos' && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 text-center max-w-lg mx-auto space-y-3">
-              <div className="w-12 h-12 bg-sky-50 text-[#0c315b] rounded-full flex items-center justify-center mx-auto">
-                <Gift className="w-6 h-6" />
-              </div>
-              <h2 className="text-lg font-bold text-gray-900">Programa de Referidos Polar</h2>
-              <p className="text-xs text-gray-500">
-                Invitá a otras soderías o repartos a digitalizarse con el sistema y obtené descuentos en tu plan.
-              </p>
-              <div className="p-3 bg-gray-50 rounded-lg border font-mono text-xs text-gray-700 break-all">
-                https://polar.reparto.cloud/ref/POLAR-CORDOBA
-              </div>
-            </div>
+            <Referidos />
           )}
 
           {activeTab === 'usuarios' && <UsuariosPanel />}

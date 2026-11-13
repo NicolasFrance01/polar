@@ -20,7 +20,7 @@ import { fetchTrips } from '../services/api';
 
 export default function Repartos({ onOpenDriverTrip }) {
   const [activeSubtab, setActiveSubtab] = useState('repartos'); // 'repartos' | 'programar'
-  const [selectedTruckId, setSelectedTruckId] = useState('VIAJE-25');
+  const [selectedTruckId, setSelectedTruckId] = useState('');
   const [tripsData, setTripsData] = useState(getStoredTrips);
   
   const [showQueEsBalanceModal, setShowQueEsBalanceModal] = useState(false);
@@ -248,6 +248,20 @@ export default function Repartos({ onOpenDriverTrip }) {
         </button>
       </div>
 
+      {activeSubtab === 'repartos' && allTripsList.length === 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-8 sm:p-12 text-center shadow-2xs space-y-4">
+          <div className="w-14 h-14 bg-sky-50 text-[#0c315b] rounded-2xl flex items-center justify-center mx-auto border border-sky-100">
+            <Truck className="w-7 h-7" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-gray-900">No hay Hojas de Ruta activas</h3>
+            <p className="text-xs text-gray-500 max-w-md mx-auto">
+              No hay repartos en vivo en este momento. Podés armar una nueva hoja de ruta seleccionando pedidos en el módulo <strong>Repartir</strong>.
+            </p>
+          </div>
+        </div>
+      )}
+
       {activeSubtab === 'repartos' && currentTrip && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 shadow-2xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -439,23 +453,15 @@ export default function Repartos({ onOpenDriverTrip }) {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-2xs space-y-4">
-            <h3 className="font-bold text-base text-gray-900">Recorridos Fijos Semanales</h3>
-            <div className="divide-y divide-gray-100 text-xs">
-              <div className="py-3 flex items-center justify-between gap-2">
-                <div>
-                  <strong className="text-gray-900 block text-sm">Lunes y Jueves · Recorrido Centro / Alberdi</strong>
-                  <span className="text-gray-500">18 clientes fijos · Camión #1 (Marcos Gutiérrez)</span>
-                </div>
-                <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 font-bold text-[11px]">Activo</span>
-              </div>
-              <div className="py-3 flex items-center justify-between gap-2">
-                <div>
-                  <strong className="text-gray-900 block text-sm">Martes y Viernes · Recorrido Zona Norte</strong>
-                  <span className="text-gray-500">22 clientes fijos · Camión #2 (Sofía Ramos)</span>
-                </div>
-                <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 font-bold text-[11px]">Activo</span>
-              </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-8 sm:p-12 text-center shadow-2xs space-y-3">
+            <div className="w-12 h-12 bg-sky-50 text-[#0c315b] rounded-2xl flex items-center justify-center mx-auto border border-sky-100">
+              <Truck className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-bold text-base text-gray-900">No hay recorridos fijos semanales</h3>
+              <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                No tenés recorridos semanales programados todavía. Podés armar tus hojas de ruta directamente desde el módulo <strong>Repartir</strong>.
+              </p>
             </div>
           </div>
         </div>

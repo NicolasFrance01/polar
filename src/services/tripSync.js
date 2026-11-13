@@ -2,159 +2,25 @@
 const CHANNEL_NAME = 'polar_trip_sync_channel';
 const STORAGE_KEY = 'polar_trips_data_v1';
 
-// Initial trips seed
-export const INITIAL_TRIPS = {
-  'VIAJE-25': {
-    id: 'VIAJE-25',
-    tripNumber: 25,
-    driverName: 'Marcos Gutiérrez',
-    truck: 'Camión #1 (Mercedes Sprinter)',
-    driverPhone: '5491155550100',
-    zone: 'Zona Centro / Alberdi',
-    driverCoords: { lat: -31.4089, lng: -64.1956 },
-    lastUpdate: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    stops: [
-      {
-        id: 'stop-1',
-        orderNumber: 1,
-        clientName: 'Don Mario Talleres',
-        address: 'Loyola 320, Alberdi',
-        phone: '5491155550101',
-        coords: { lat: -31.4045, lng: -64.1910 },
-        items: [{ name: 'Bidón 20L', qty: 2, price: 4200 }],
-        total: 8400,
-        status: 'entregado',
-        deliveredAt: '15:20',
-        paymentMethod: 'Efectivo',
-        returnedEmpty: 2
-      },
-      {
-        id: 'stop-2',
-        orderNumber: 2,
-        clientName: 'Familia Rossi',
-        address: 'Serrano 540, Alberdi',
-        phone: '5491155550102',
-        coords: { lat: -31.4070, lng: -64.1935 },
-        items: [
-          { name: 'Bidón 20L', qty: 1, price: 4200 },
-          { name: 'Sifón Soda 1.5L', qty: 2, price: 1300 }
-        ],
-        total: 6800,
-        status: 'entregado',
-        deliveredAt: '15:35',
-        paymentMethod: 'Transferencia',
-        returnedEmpty: 1
-      },
-      {
-        id: 'stop-3',
-        orderNumber: 3,
-        clientName: 'María Esther López',
-        address: 'Camargo 460, Alberdi',
-        phone: '5491155550105',
-        coords: { lat: -31.4110, lng: -64.1980 },
-        items: [{ name: 'Bidón 20L', qty: 2, price: 4200 }],
-        total: 8400,
-        status: 'en_camino',
-        isNext: true,
-        deliveredAt: null,
-        paymentMethod: 'Efectivo',
-        returnedEmpty: 0
-      },
-      {
-        id: 'stop-4',
-        orderNumber: 4,
-        clientName: 'Roberto Fernández',
-        address: 'Aguirre 750, Alberdi',
-        phone: '5491155550108',
-        coords: { lat: -31.4140, lng: -64.2010 },
-        items: [{ name: 'Bidón 20L', qty: 3, price: 4200 }],
-        total: 12600,
-        status: 'pendiente',
-        deliveredAt: null,
-        paymentMethod: 'Efectivo',
-        returnedEmpty: 0
-      }
-    ]
-  },
-  'VIAJE-26': {
-    id: 'VIAJE-26',
-    tripNumber: 26,
-    driverName: 'Sofía Ramos',
-    truck: 'Camión #2 (Renault Master)',
-    driverPhone: '5491155550200',
-    zone: 'Zona Norte / San Martín',
-    driverCoords: { lat: -31.3980, lng: -64.1850 },
-    lastUpdate: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    stops: [
-      {
-        id: 'stop-26-1',
-        orderNumber: 1,
-        clientName: 'Panadería La Espiga',
-        address: 'Juan B. Justo 3420',
-        phone: '5491155550112',
-        coords: { lat: -31.3920, lng: -64.1820 },
-        items: [{ name: 'Bidón 20L', qty: 4, price: 4200 }],
-        total: 16800,
-        status: 'entregado',
-        deliveredAt: '15:15',
-        paymentMethod: 'Efectivo',
-        returnedEmpty: 4
-      },
-      {
-        id: 'stop-26-2',
-        orderNumber: 2,
-        clientName: 'Consultorio Dental Crespo',
-        address: 'Corrientes 4800, Piso 2',
-        phone: '5491155550103',
-        coords: { lat: -31.3950, lng: -64.1840 },
-        items: [{ name: 'Bidón 20L', qty: 3, price: 4200 }],
-        total: 12600,
-        status: 'entregado',
-        deliveredAt: '15:40',
-        paymentMethod: 'Transferencia',
-        returnedEmpty: 3
-      },
-      {
-        id: 'stop-26-3',
-        orderNumber: 3,
-        clientName: 'Rubén Álvarez',
-        address: 'Vera 620, San Martín',
-        phone: '5491155550106',
-        coords: { lat: -31.3990, lng: -64.1880 },
-        items: [{ name: 'Bidón 20L', qty: 3, price: 4200 }],
-        total: 12600,
-        status: 'en_camino',
-        isNext: true,
-        deliveredAt: null,
-        paymentMethod: 'Efectivo',
-        returnedEmpty: 0
-      },
-      {
-        id: 'stop-26-4',
-        orderNumber: 4,
-        clientName: 'Raúl Medina',
-        address: 'Castro Barros 1120',
-        phone: '5491155550107',
-        coords: { lat: -31.4020, lng: -64.1900 },
-        items: [{ name: 'Bidón 12L c/ canilla', qty: 2, price: 3300 }],
-        total: 6600,
-        status: 'pendiente',
-        deliveredAt: null,
-        paymentMethod: 'Fiado (Cta Cte)',
-        returnedEmpty: 0
-      }
-    ]
-  }
-};
+// Initial trips seed (empty for clean test loads)
+export const INITIAL_TRIPS = {};
 
 // Get all trips from localStorage with fallback
 export function getStoredTrips() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Clean legacy mock trips if present
+      if (parsed['VIAJE-25'] || parsed['VIAJE-26']) {
+        delete parsed['VIAJE-25'];
+        delete parsed['VIAJE-26'];
+        saveTrips(parsed);
+      }
+      return parsed;
+    }
   } catch (e) {}
-  saveTrips(INITIAL_TRIPS);
-  return INITIAL_TRIPS;
+  return {};
 }
 
 // Save trips and broadcast event to all open tabs/windows

@@ -74,28 +74,48 @@ export default function Repartir({ onOpenDriverTrip }) {
 
       // Merge DB orders with fallback sample orders if DB has none pending
       const rawOrders = Array.isArray(dbOrders) && dbOrders.length > 0 ? dbOrders : getStoredOrders();
-      const normalized = rawOrders.map((o, idx) => ({
-        orderId: o.orderId || o.id || `POLAR-${90100 + idx}`,
-        clientName: o.clientName || o.client_name || 'Cliente Polar',
-        clientPhone: o.clientPhone || o.client_phone || '',
-        address: o.address || '',
-        neighborhood: o.neighborhood || '',
-        notes: o.notes || '',
-        coords: o.coords || (o.lat && o.lng ? { lat: Number(o.lat), lng: Number(o.lng) } : {
-          lat: -31.404 + (idx * 0.0035),
-          lng: -64.191 - (idx * 0.0025)
-        }),
-        items: Array.isArray(o.items) ? o.items : [],
-        total: Number(o.total) || 0,
-        status: o.status || 'Pendiente de aprobación',
-        tripId: o.tripId || o.trip_id || null,
-        createdAt: o.createdAt || o.created_at || new Date().toISOString()
-      }));
+      const normalized = rawOrders.map((o, idx) => {
+        const lat = o.lat ?? o.coords?.lat ?? null;
+        const lng = o.lng ?? o.coords?.lng ?? null;
+        return {
+          orderId: o.orderId || o.id || `POLAR-${90100 + idx}`,
+          clientName: o.clientName || o.client_name || 'Cliente Polar',
+          clientPhone: o.clientPhone || o.client_phone || '',
+          address: o.address || '',
+          neighborhood: o.neighborhood || '',
+          notes: o.notes || '',
+          coords: (lat && lng) ? { lat: Number(lat), lng: Number(lng) } : null,
+          items: Array.isArray(o.items) ? o.items : [],
+          total: Number(o.total) || 0,
+          status: o.status || 'Pendiente de aprobación',
+          tripId: o.tripId || o.trip_id || null,
+          createdAt: o.createdAt || o.created_at || new Date().toISOString()
+        };
+      });
 
       setOrders(normalized);
       if (!focusedOrder && normalized.length > 0) {
         setFocusedOrder(normalized[0]);
       }
+
+      // Background geocode any orders without GPS coords
+      normalized.forEach(async (ord) => {
+        if (!ord.coords && ord.address) {
+          try {
+            const q = [ord.address, ord.neighborhood, 'Córdoba, Argentina'].filter(Boolean).join(', ');
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`, {
+              headers: { 'User-Agent': 'PolarApp/1.0 (admin@polar.com)' }
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (Array.isArray(data) && data.length > 0) {
+                const newCoords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+                setOrders((prev) => prev.map((item) => item.orderId === ord.orderId ? { ...item, coords: newCoords } : item));
+              }
+            }
+          } catch (e) {}
+        }
+      });
 
       if (dbTrips && typeof dbTrips === 'object') {
         const list = Object.values(dbTrips).sort((a, b) => (b.tripNumber || 0) - (a.tripNumber || 0));
@@ -133,23 +153,35 @@ export default function Repartir({ onOpenDriverTrip }) {
 
     if (!leafletMapRef.current) {
       const map = window.L.map(mapContainerRef.current, {
-        center: [-31.4089, -64.1956],
+        center: [-31.4170, -64.1830],
         zoom: 13
       });
       window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap',
+        attribution: '© OpenStreetMap contributors',
         maxZoom: 19
       }).addTo(map);
       leafletMapRef.current = map;
       layerGroupRef.current = window.L.layerGroup().addTo(map);
     }
 
-    const timer = setTimeout(() => {
+    const timer1 = setTimeout(() => {
       leafletMapRef.current?.invalidateSize();
       refreshMapPins();
-    }, 150);
+    }, 100);
 
-    return () => clearTimeout(timer);
+    const timer2 = setTimeout(() => {
+      leafletMapRef.current?.invalidateSize();
+      refreshMapPins();
+    }, 450);
+
+    const handleResize = () => leafletMapRef.current?.invalidateSize();
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      window.removeEventListener('resize', handleResize);
+    };
   }, [subtab]);
 
   const refreshMapPins = () => {
@@ -157,9 +189,12 @@ export default function Repartir({ onOpenDriverTrip }) {
     layerGroupRef.current.clearLayers();
 
     const selectedLatLngs = [];
+    const validCoords = [];
 
     orders.forEach((ord) => {
       if (!ord.coords?.lat || !ord.coords?.lng) return;
+      validCoords.push([ord.coords.lat, ord.coords.lng]);
+
       const selIndex = selectedOrderIds.indexOf(ord.orderId);
       const isSelected = selIndex !== -1;
       const isFocused = focusedOrder?.orderId === ord.orderId;
@@ -194,6 +229,12 @@ export default function Repartir({ onOpenDriverTrip }) {
         weight: 3,
         dashArray: '6, 6'
       }).addTo(layerGroupRef.current);
+    }
+
+    if (focusedOrder?.coords?.lat && focusedOrder?.coords?.lng) {
+      leafletMapRef.current.setView([focusedOrder.coords.lat, focusedOrder.coords.lng], 14, { animate: true });
+    } else if (validCoords.length > 0) {
+      leafletMapRef.current.fitBounds(validCoords, { padding: [35, 35], maxZoom: 15 });
     }
   };
 
@@ -295,13 +336,24 @@ export default function Repartir({ onOpenDriverTrip }) {
     window.open(`https://wa.me/${dPhone}?text=${text}`, '_blank');
   };
 
-  const getOsmIframeUrl = (coords) => {
-    if (!coords?.lat || !coords?.lng) {
-      return 'https://www.openstreetmap.org/export/embed.html?bbox=-64.225,-31.430,-64.165,-31.385&layer=mapnik';
+  const getGoogleMapsEmbedUrl = (order) => {
+    if (!order) {
+      return 'https://maps.google.com/maps?q=Cordoba,%20Argentina&t=&z=13&ie=UTF8&iwloc=&output=embed';
     }
-    const d = 0.008;
-    const bbox = `${coords.lng - d},${coords.lat - d},${coords.lng + d},${coords.lat + d}`;
-    return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${coords.lat},${coords.lng}`;
+    const query = [order.address, order.neighborhood, 'Córdoba, Argentina'].filter(Boolean).join(', ');
+    return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=&z=16&ie=UTF8&iwloc=&output=embed`;
+  };
+
+  const getGoogleMapsDirectUrl = (order) => {
+    if (!order) return 'https://www.google.com/maps';
+    const query = [order.address, order.neighborhood, 'Córdoba, Argentina'].filter(Boolean).join(', ');
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+  };
+
+  const getWazeDirectUrl = (order) => {
+    if (!order) return 'https://waze.com';
+    const query = [order.address, order.neighborhood, 'Córdoba, Argentina'].filter(Boolean).join(', ');
+    return `https://waze.com/ul?q=${encodeURIComponent(query)}`;
   };
 
   const filteredHistory = tripsHistory.filter((t) => {
@@ -413,23 +465,58 @@ export default function Repartir({ onOpenDriverTrip }) {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {/* Interactive Leaflet Map with all order pins */}
-                  <div className="relative h-56 sm:h-64 rounded-xl overflow-hidden border border-gray-200 bg-slate-100">
-                    <div ref={mapContainerRef} className="w-full h-full z-0" />
+                  <div className="relative h-60 sm:h-64 rounded-xl overflow-hidden border border-gray-200 bg-slate-100 flex flex-col">
+                    <div ref={mapContainerRef} className="w-full flex-1 min-h-[220px] z-0" />
+                    <div className="absolute bottom-2 left-2 z-10 flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          leafletMapRef.current?.invalidateSize();
+                          refreshMapPins();
+                        }}
+                        className="bg-white/95 backdrop-blur-xs px-2 py-1 rounded-md text-[10px] font-bold text-gray-700 border border-gray-200 shadow-2xs hover:bg-white transition"
+                        title="Reajustar tamaño y pines"
+                      >
+                        Centrar Pines
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Small OpenStreetMap Iframe of the focused order */}
-                  <div className="flex flex-col h-56 sm:h-64 rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
-                    <div className="px-2.5 py-1.5 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between">
-                      <span className="font-bold text-[#0c315b] truncate">
-                        {focusedOrder ? `📍 ${focusedOrder.clientName}` : 'Vista Satelital / Calle'}
+                  {/* Google Maps Embed of the focused order */}
+                  <div className="flex flex-col h-60 sm:h-64 rounded-xl overflow-hidden border border-gray-200 bg-gray-50 shadow-2xs">
+                    <div className="px-2.5 py-1.5 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between gap-1">
+                      <span className="font-bold text-[#0c315b] truncate flex items-center gap-1 min-w-0">
+                        <span>📍</span>
+                        <span className="truncate">{focusedOrder ? focusedOrder.clientName : 'Google Maps'}</span>
                       </span>
-                      <span className="text-gray-400 truncate max-w-[120px]">
-                        {focusedOrder?.address || ''}
-                      </span>
+                      {focusedOrder && (
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <a
+                            href={getGoogleMapsDirectUrl(focusedOrder)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] font-bold text-sky-700 hover:text-sky-900 bg-sky-50 hover:bg-sky-100 px-1.5 py-0.5 rounded flex items-center gap-0.5 transition"
+                            title="Abrir en Google Maps"
+                          >
+                            <span>Maps</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                          <a
+                            href={getWazeDirectUrl(focusedOrder)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded flex items-center gap-0.5 transition"
+                            title="Abrir en Waze"
+                          >
+                            <span>Waze</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        </div>
+                      )}
                     </div>
                     <iframe
-                      title="Mapa del pedido"
-                      src={getOsmIframeUrl(focusedOrder?.coords)}
+                      title="Google Maps"
+                      src={getGoogleMapsEmbedUrl(focusedOrder)}
                       className="w-full flex-1 border-0"
                       loading="lazy"
                     />

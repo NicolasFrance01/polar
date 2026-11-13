@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   LayoutDashboard, 
   Truck, 
@@ -10,12 +10,7 @@ import {
   UserCheck, 
   ChevronLeft, 
   ChevronRight, 
-  Bell, 
-  ShoppingBag, 
   LogOut,
-  ExternalLink,
-  Copy,
-  Check,
   X
 } from 'lucide-react';
 
@@ -30,7 +25,6 @@ export default function Sidebar({
   currentUser,
   onLogout
 }) {
-  const [copiedCliente, setCopiedCliente] = useState(false);
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -141,75 +135,19 @@ export default function Sidebar({
               );
             })}
           </nav>
-
-          {/* Public Client Link (/cliente) separated from system */}
-          <div className="px-2 pt-3 mt-2 border-t border-gray-100 space-y-1.5">
-            {!collapsed && (
-              <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 block">
-                Link Público Clientes
-              </span>
-            )}
-            <div className={`flex items-center gap-1 ${collapsed ? 'flex-col' : ''}`}>
-              <a
-                href="/cliente"
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`flex-1 flex items-center rounded-xl text-xs font-bold transition-all ${
-                  collapsed ? 'justify-center p-2.5' : 'space-x-2 px-3 py-2'
-                } bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200`}
-                title="Abrir link público /cliente en nueva pestaña"
-              >
-                <ShoppingBag className="w-4 h-4 text-emerald-700 flex-shrink-0" />
-                {!collapsed && <span className="truncate flex-1 text-left">/cliente</span>}
-                {!collapsed && <ExternalLink className="w-3 h-3 text-emerald-600" />}
-              </a>
-
-              <button
-                type="button"
-                onClick={handleCopyClienteLink}
-                className="p-2 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-600 transition"
-                title="Copiar link /cliente para enviar al cliente"
-              >
-                {copiedCliente ? (
-                  <Check className="w-4 h-4 text-emerald-600" />
-                ) : (
-                  <Copy className="w-4 h-4" />
-                )}
-              </button>
-            </div>
-          </div>
         </div>
 
-        {/* Bottom Profile, Notifications and Logout */}
-        <div className="p-3 border-t border-gray-100 space-y-2">
-          <div 
-            className={`flex items-center rounded-xl transition ${
-              collapsed ? 'justify-center py-2' : 'space-x-3 px-2.5 py-2 hover:bg-gray-50'
-            }`}
-          >
-            <div className="relative">
-              <button className="p-1.5 rounded-lg text-gray-500 hover:text-[#0c315b] hover:bg-gray-100 transition">
-                <Bell className="w-4 h-4" />
-              </button>
-              {unreadNotifications > 0 && (
-                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-sky-600"></span>
-              )}
-            </div>
-            {!collapsed && (
-              <div className="text-xs">
-                <span className="font-semibold text-gray-700 block">Notificaciones</span>
-                <span className="text-[10px] text-gray-400">Sincronizado en vivo</span>
-              </div>
-            )}
-          </div>
-
-          {/* User Profile */}
+        {/* Bottom Profile and Logout */}
+        <div className="p-3 border-t border-gray-100">
           <div 
             className={`flex items-center rounded-xl bg-gray-50 border border-gray-200/80 p-2 ${
               collapsed ? 'justify-center' : 'space-x-2.5'
             }`}
           >
-            <div className="w-8 h-8 rounded-full bg-[#0c315b] text-white font-extrabold text-xs flex items-center justify-center flex-shrink-0 shadow-2xs uppercase">
+            <div 
+              className="w-8 h-8 rounded-full bg-[#0c315b] text-white font-extrabold text-xs flex items-center justify-center flex-shrink-0 shadow-2xs uppercase"
+              title={currentUser?.name || currentUser?.username || 'Usuario'}
+            >
               {(currentUser?.name || currentUser?.username || 'M').charAt(0)}
             </div>
             {!collapsed && (
@@ -222,7 +160,7 @@ export default function Sidebar({
                 </span>
               </div>
             )}
-            {!collapsed && onLogout && (
+            {onLogout && (
               <button
                 onClick={onLogout}
                 className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition"

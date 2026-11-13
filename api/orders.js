@@ -47,6 +47,29 @@ export default async function handler(req, res) {
 
       const id = orderId || `POLAR-${Math.floor(10000 + Math.random() * 90000)}`;
 
+      let lat = coords?.lat || null;
+      let lng = coords?.lng || null;
+
+      if ((!lat || !lng) && address) {
+        try {
+          const q = [address, neighborhood, 'Córdoba, Argentina'].filter(Boolean).join(', ');
+          const ctrl = new AbortController();
+          const tid = setTimeout(() => ctrl.abort(), 2500);
+          const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`, {
+            headers: { 'User-Agent': 'PolarApp/1.0 (admin@polar.com)' },
+            signal: ctrl.signal
+          });
+          clearTimeout(tid);
+          if (geoRes.ok) {
+            const data = await geoRes.json();
+            if (Array.isArray(data) && data.length > 0) {
+              lat = parseFloat(data[0].lat);
+              lng = parseFloat(data[0].lon);
+            }
+          }
+        } catch (e) {}
+      }
+
       await query(`
         INSERT INTO orders (
           id, client_name, client_phone, address, neighborhood, notes, lat, lng, items, total, status
@@ -65,7 +88,7 @@ export default async function handler(req, res) {
           status = EXCLUDED.status
       `, [
         id, clientName, clientPhone, address, neighborhood, notes || '',
-        coords?.lat || null, coords?.lng || null,
+        lat, lng,
         JSON.stringify(items || []), total || 0, status || 'Pendiente de aprobación'
       ]);
 
@@ -76,7 +99,7 @@ export default async function handler(req, res) {
         address,
         neighborhood,
         notes,
-        coords,
+        coords: (lat && lng) ? { lat, lng } : null,
         items,
         total,
         status: status || 'Pendiente de aprobación'

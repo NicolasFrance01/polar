@@ -74,6 +74,22 @@ export default async function handler(req, res) {
       return res.status(200).json(result.rows[0]);
     }
 
+    if (method === 'DELETE') {
+      const { id } = req.query || {};
+      if (!id) {
+        return res.status(400).json({ error: 'Falta el id del cliente' });
+      }
+
+      try {
+        await query(`DELETE FROM clients WHERE id = $1`, [id]);
+      } catch (err) {
+        // En caso de que existan registros vinculados en pedidos históricos, hacemos soft-delete
+        await query(`UPDATE clients SET active = false WHERE id = $1`, [id]);
+      }
+
+      return res.status(200).json({ success: true, id });
+    }
+
     return res.status(405).json({ error: `Method ${method} not allowed` });
   } catch (error) {
     console.error('API clients error:', error);
