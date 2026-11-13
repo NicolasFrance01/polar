@@ -108,21 +108,47 @@ export default async function handler(req, res) {
 
     if (method === 'PUT') {
       const { id } = req.query;
-      const { status, tripId } = req.body;
+      const { clientName, clientPhone, address, neighborhood, notes, items, total, status, tripId } = req.body;
 
       const result = await query(`
         UPDATE orders
-        SET status = COALESCE($1, status),
-            trip_id = COALESCE($2, trip_id)
-        WHERE id = $3
+        SET client_name = COALESCE($1, client_name),
+            client_phone = COALESCE($2, client_phone),
+            address = COALESCE($3, address),
+            neighborhood = COALESCE($4, neighborhood),
+            notes = COALESCE($5, notes),
+            items = CASE WHEN $6::text IS NOT NULL THEN $6::jsonb ELSE items END,
+            total = COALESCE($7, total),
+            status = COALESCE($8, status),
+            trip_id = COALESCE($9, trip_id)
+        WHERE id = $10
         RETURNING *
-      `, [status, tripId, id]);
+      `, [
+        clientName || null,
+        clientPhone || null,
+        address || null,
+        neighborhood || null,
+        notes !== undefined ? notes : null,
+        items ? JSON.stringify(items) : null,
+        total !== undefined ? total : null,
+        status || null,
+        tripId !== undefined ? tripId : null,
+        id
+      ]);
 
       if (result.rowCount === 0) {
         return res.status(404).json({ error: 'Order not found' });
       }
 
       return res.status(200).json(result.rows[0]);
+    }
+
+    if (method === 'DELETE') {
+      const { id } = req.query || {};
+      if (!id) return res.status(400).json({ error: 'Falta el id del pedido' });
+
+      await query(`DELETE FROM orders WHERE id = $1`, [id]);
+      return res.status(200).json({ success: true, id });
     }
 
     return res.status(405).json({ error: `Method ${method} not allowed` });

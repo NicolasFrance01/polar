@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   MapPin,
   Phone,
@@ -20,7 +20,9 @@ import {
   XCircle,
   ChevronDown,
   ChevronUp,
-  RotateCw
+  RotateCw,
+  Search,
+  X
 } from 'lucide-react';
 import {
   fetchOrders,
@@ -32,8 +34,7 @@ import { getStoredOrders } from '../services/tripSync';
 import { 
   getGoogleMapsRouteEmbedUrl, 
   getGoogleMapsDirectionsAppUrl, 
-  getWazeStopUrl, 
-  fetchOSRMStreetRoute 
+  getWazeStopUrl 
 } from '../services/mapRouting';
 
 const DEFAULT_DRIVERS = [
@@ -47,13 +48,12 @@ export default function Repartir({ onOpenDriverTrip }) {
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [focusedOrder, setFocusedOrder] = useState(null);
   const [drivers, setDrivers] = useState(DEFAULT_DRIVERS);
-  const [mapMode, setMapMode] = useState('google'); // 'google' | 'pines'
+  const [availableSearch, setAvailableSearch] = useState('');
 
   // Route creation form
   const [selectedDriverName, setSelectedDriverName] = useState(DEFAULT_DRIVERS[0].name);
   const [driverPhone, setDriverPhone] = useState(DEFAULT_DRIVERS[0].phone);
   const [truck, setTruck] = useState(DEFAULT_DRIVERS[0].truck);
-  const [zone, setZone] = useState('Zona Centro / Alberdi');
   const [routeNotes, setRouteNotes] = useState('');
   const [creatingRoute, setCreatingRoute] = useState(false);
   const [createdRouteResult, setCreatedRouteResult] = useState(null);
@@ -64,11 +64,6 @@ export default function Repartir({ onOpenDriverTrip }) {
   const [historyFilter, setHistoryFilter] = useState('todos'); // 'todos' | 'en_curso' | 'finalizada'
   const [expandedTripId, setExpandedTripId] = useState(null);
   const [loadingData, setLoadingData] = useState(false);
-
-  // Multi-pin Leaflet preview map
-  const mapContainerRef = useRef(null);
-  const leafletMapRef = useRef(null);
-  const layerGroupRef = useRef(null);
 
   const loadAllData = async () => {
     setLoadingData(true);
@@ -105,25 +100,6 @@ export default function Repartir({ onOpenDriverTrip }) {
         setFocusedOrder(normalized[0]);
       }
 
-      // Background geocode any orders without GPS coords
-      normalized.forEach(async (ord) => {
-        if (!ord.coords && ord.address) {
-          try {
-            const q = [ord.address, ord.neighborhood, 'Córdoba, Argentina'].filter(Boolean).join(', ');
-            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`, {
-              headers: { 'User-Agent': 'PolarApp/1.0 (admin@polar.com)' }
-            });
-            if (res.ok) {
-              const data = await res.json();
-              if (Array.isArray(data) && data.length > 0) {
-                const newCoords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-                setOrders((prev) => prev.map((item) => item.orderId === ord.orderId ? { ...item, coords: newCoords } : item));
-              }
-            }
-          } catch (e) {}
-        }
-      });
-
       if (dbTrips && typeof dbTrips === 'object') {
         const list = Object.values(dbTrips).sort((a, b) => (b.tripNumber || 0) - (a.tripNumber || 0));
         setTripsHistory(list);
@@ -152,108 +128,6 @@ export default function Repartir({ onOpenDriverTrip }) {
   useEffect(() => {
     loadAllData();
   }, []);
-
-  // Initialize Leaflet map for "armar" tab
-  useEffect(() => {
-    if (subtab !== 'armar') return;
-    if (!window.L || !mapContainerRef.current) return;
-
-    if (!leafletMapRef.current) {
-      const map = window.L.map(mapContainerRef.current, {
-        center: [-31.4170, -64.1830],
-        zoom: 13
-      });
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 19
-      }).addTo(map);
-      leafletMapRef.current = map;
-      layerGroupRef.current = window.L.layerGroup().addTo(map);
-    }
-
-    const timer1 = setTimeout(() => {
-      leafletMapRef.current?.invalidateSize();
-      refreshMapPins();
-    }, 100);
-
-    const timer2 = setTimeout(() => {
-      leafletMapRef.current?.invalidateSize();
-      refreshMapPins();
-    }, 450);
-
-    const handleResize = () => leafletMapRef.current?.invalidateSize();
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [subtab]);
-
-  const refreshMapPins = () => {
-    if (!window.L || !leafletMapRef.current || !layerGroupRef.current) return;
-    layerGroupRef.current.clearLayers();
-
-    const selectedLatLngs = [];
-    const validCoords = [];
-
-    orders.forEach((ord) => {
-      if (!ord.coords?.lat || !ord.coords?.lng) return;
-      validCoords.push([ord.coords.lat, ord.coords.lng]);
-
-      const selIndex = selectedOrderIds.indexOf(ord.orderId);
-      const isSelected = selIndex !== -1;
-      const isFocused = focusedOrder?.orderId === ord.orderId;
-
-      const bg = isSelected ? '#0c315b' : ord.tripId ? '#9ca3af' : '#0284c7';
-      const border = isFocused ? '3px solid #f97316' : '2px solid white';
-      const label = isSelected ? `${selIndex + 1}` : '•';
-
-      const icon = window.L.divIcon({
-        className: 'custom-order-pin',
-        html: `<div style="background:${bg};width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:800;font-size:12px;border:${border};box-shadow:0 2px 6px rgba(0,0,0,0.3);cursor:pointer;">${label}</div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14]
-      });
-
-      const marker = window.L.marker([ord.coords.lat, ord.coords.lng], { icon })
-        .bindPopup(`<strong>${ord.clientName}</strong><br>${ord.address}<br>$${ord.total.toLocaleString()}`)
-        .on('click', () => {
-          setFocusedOrder(ord);
-        });
-
-      marker.addTo(layerGroupRef.current);
-
-      if (isSelected) {
-        selectedLatLngs.push([ord.coords.lat, ord.coords.lng]);
-      }
-    });
-
-    if (selectedLatLngs.length > 1) {
-      fetchOSRMStreetRoute(selectedLatLngs).then((streetPath) => {
-        if (!leafletMapRef.current || !layerGroupRef.current) return;
-        const lineCoords = (streetPath && streetPath.length > 0) ? streetPath : selectedLatLngs;
-        window.L.polyline(lineCoords, {
-          color: '#0284c7',
-          weight: 4,
-          opacity: 0.9
-        }).addTo(layerGroupRef.current);
-      });
-    }
-
-    if (focusedOrder?.coords?.lat && focusedOrder?.coords?.lng) {
-      leafletMapRef.current.setView([focusedOrder.coords.lat, focusedOrder.coords.lng], 14, { animate: true });
-    } else if (validCoords.length > 0) {
-      leafletMapRef.current.fitBounds(validCoords, { padding: [35, 35], maxZoom: 15 });
-    }
-  };
-
-  useEffect(() => {
-    if (subtab === 'armar') {
-      refreshMapPins();
-    }
-  }, [orders, selectedOrderIds, focusedOrder, subtab]);
 
   const toggleSelectOrder = (orderId) => {
     setSelectedOrderIds((prev) =>
@@ -306,7 +180,7 @@ export default function Repartir({ onOpenDriverTrip }) {
         driverName: selectedDriverName,
         driverPhone,
         truck,
-        zone,
+        zone: 'General',
         notes: routeNotes,
         stops: stopsPayload
       });
@@ -346,6 +220,19 @@ export default function Repartir({ onOpenDriverTrip }) {
     );
     window.open(`https://wa.me/${dPhone}?text=${text}`, '_blank');
   };
+
+  // Filter available orders with search input
+  const filteredAvailableOrders = orders.filter((o) => {
+    if (!availableSearch.trim()) return true;
+    const term = availableSearch.toLowerCase();
+    return (
+      (o.clientName && o.clientName.toLowerCase().includes(term)) ||
+      (o.address && o.address.toLowerCase().includes(term)) ||
+      (o.neighborhood && o.neighborhood.toLowerCase().includes(term)) ||
+      (o.orderId && o.orderId.toLowerCase().includes(term)) ||
+      (o.clientPhone && o.clientPhone.toLowerCase().includes(term))
+    );
+  });
 
   const filteredHistory = tripsHistory.filter((t) => {
     if (historyFilter === 'todos') return true;
@@ -442,13 +329,13 @@ export default function Repartir({ onOpenDriverTrip }) {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             {/* LEFT: Orders list + Map */}
             <div className="lg:col-span-7 space-y-4">
-              {/* Route Map Card (Google Maps Multi-Stop Real Streets & Leaflet option) */}
+              {/* Route Map Card (Google Maps Real Street Routing) */}
               <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 shadow-2xs space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center space-x-2">
                     <MapPin className="w-4 h-4 text-[#0c315b]" />
                     <h2 className="text-sm font-bold text-gray-900">
-                      Ruta Multi-Parada y Trazado de Calles
+                      Ruta Multi-Parada en Google Maps
                     </h2>
                     {selectedOrders.length >= 2 && (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-[#0c315b]">
@@ -458,36 +345,6 @@ export default function Repartir({ onOpenDriverTrip }) {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* View Switcher: Google Maps (Directions) vs Pines */}
-                    <div className="flex items-center bg-gray-100 p-0.5 rounded-lg text-xs font-bold">
-                      <button
-                        type="button"
-                        onClick={() => setMapMode('google')}
-                        className={`px-2.5 py-1 rounded-md transition ${
-                          mapMode === 'google'
-                            ? 'bg-white text-[#0c315b] shadow-2xs'
-                            : 'text-gray-500 hover:text-gray-900'
-                        }`}
-                      >
-                        Google Maps
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMapMode('pines');
-                          setTimeout(() => leafletMapRef.current?.invalidateSize(), 150);
-                        }}
-                        className={`px-2.5 py-1 rounded-md transition ${
-                          mapMode === 'pines'
-                            ? 'bg-white text-[#0c315b] shadow-2xs'
-                            : 'text-gray-500 hover:text-gray-900'
-                        }`}
-                      >
-                        Pines Leaflet
-                      </button>
-                    </div>
-
-                    {/* External navigation buttons */}
                     <a
                       href={getGoogleMapsDirectionsAppUrl(selectedOrders.length > 0 ? selectedOrders : (focusedOrder ? [focusedOrder] : []))}
                       target="_blank"
@@ -501,71 +358,75 @@ export default function Repartir({ onOpenDriverTrip }) {
                   </div>
                 </div>
 
-                {/* Map Display Container */}
-                {mapMode === 'google' ? (
-                  <div className="flex flex-col h-72 sm:h-84 rounded-xl overflow-hidden border border-gray-200 bg-gray-50 shadow-inner">
-                    <div className="px-3 py-1.5 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between">
-                      <span className="font-bold text-[#0c315b] truncate">
-                        {selectedOrders.length >= 2 ? (
-                          <>
-                            🛣️ Recorrido: {selectedOrders.map((o, idx) => `${idx + 1}. ${o.clientName}`).join(' ➔ ')}
-                          </>
-                        ) : selectedOrders.length === 1 ? (
-                          <>📍 Parada 1: {selectedOrders[0].clientName} ({selectedOrders[0].address})</>
-                        ) : focusedOrder ? (
-                          <>📍 Vista de pedido: {focusedOrder.clientName} ({focusedOrder.address})</>
-                        ) : (
-                          <>Google Maps Córdoba · Seleccioná pedidos para unir las paradas</>
-                        )}
-                      </span>
-                      <span className="text-gray-400 text-[10px] hidden sm:inline">
-                        Traza las calles exactas en Google Maps
-                      </span>
-                    </div>
+                {/* Google Maps Embed Full Container */}
+                <div className="flex flex-col h-72 sm:h-84 rounded-xl overflow-hidden border border-gray-200 bg-gray-50 shadow-inner">
+                  <div className="px-3 py-1.5 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between">
+                    <span className="font-bold text-[#0c315b] truncate">
+                      {selectedOrders.length >= 2 ? (
+                        <>
+                          🛣️ Recorrido: {selectedOrders.map((o, idx) => `${idx + 1}. ${o.clientName}`).join(' ➔ ')}
+                        </>
+                      ) : selectedOrders.length === 1 ? (
+                        <>📍 Parada 1: {selectedOrders[0].clientName} ({selectedOrders[0].address})</>
+                      ) : focusedOrder ? (
+                        <>📍 Vista de pedido: {focusedOrder.clientName} ({focusedOrder.address})</>
+                      ) : (
+                        <>Google Maps Córdoba · Seleccioná pedidos para unir las paradas</>
+                      )}
+                    </span>
+                    <span className="text-gray-400 text-[10px] hidden sm:inline">
+                      Traza las calles exactas en Google Maps
+                    </span>
+                  </div>
 
-                    <iframe
-                      title="Google Maps Route"
-                      src={getGoogleMapsRouteEmbedUrl(selectedOrders.length > 0 ? selectedOrders : (focusedOrder ? [focusedOrder] : []))}
-                      className="w-full flex-1 border-0"
-                      loading="lazy"
-                    />
-                  </div>
-                ) : (
-                  <div className="relative h-72 sm:h-84 rounded-xl overflow-hidden border border-gray-200 bg-slate-100 flex flex-col shadow-inner">
-                    <div ref={mapContainerRef} className="w-full flex-1 min-h-[240px] z-0" />
-                    <div className="absolute bottom-2 left-2 z-10 flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          leafletMapRef.current?.invalidateSize();
-                          refreshMapPins();
-                        }}
-                        className="bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-md text-[10px] font-bold text-gray-700 border border-gray-200 shadow-2xs hover:bg-white transition"
-                      >
-                        Centrar Pines
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  <iframe
+                    title="Google Maps Route"
+                    src={getGoogleMapsRouteEmbedUrl(selectedOrders.length > 0 ? selectedOrders : (focusedOrder ? [focusedOrder] : []))}
+                    className="w-full flex-1 border-0"
+                    loading="lazy"
+                  />
+                </div>
               </div>
 
-              {/* Selectable Orders List */}
+              {/* Selectable Orders List with Search */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-2xs space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold text-gray-900">
-                    Pedidos Disponibles ({orders.length})
+                    Pedidos Disponibles ({filteredAvailableOrders.length} de {orders.length})
                   </h3>
                   <span className="text-xs font-bold text-[#0c315b]">
                     {selectedOrderIds.length} seleccionados
                   </span>
                 </div>
 
+                {/* Search Bar for Available Orders */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={availableSearch}
+                    onChange={(e) => setAvailableSearch(e.target.value)}
+                    placeholder="Buscar pedido por cliente, dirección o #ID..."
+                    className="w-full pl-8 pr-8 py-2 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0c315b]"
+                  />
+                  {availableSearch && (
+                    <button
+                      onClick={() => setAvailableSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
                 <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                  {orders.length === 0 ? (
+                  {filteredAvailableOrders.length === 0 ? (
                     <div className="text-center py-8 text-xs text-gray-400">
-                      No hay pedidos cargados todavía. Los pedidos ingresados desde /cliente aparecerán aquí.
+                      {orders.length === 0 
+                        ? 'No hay pedidos cargados todavía. Los pedidos ingresados desde /cliente aparecerán aquí.' 
+                        : 'No se encontraron pedidos que coincidan con la búsqueda.'}
                     </div>
-                  ) : orders.map((ord) => {
+                  ) : filteredAvailableOrders.map((ord) => {
                     const isSelected = selectedOrderIds.includes(ord.orderId);
                     const isFocused = focusedOrder?.orderId === ord.orderId;
                     const alreadyAssigned = Boolean(ord.tripId);
@@ -640,7 +501,7 @@ export default function Repartir({ onOpenDriverTrip }) {
                   </div>
                 </div>
 
-                {/* Driver & Truck Inputs */}
+                {/* Driver & Truck Inputs without "Zona" */}
                 <div className="space-y-3 text-xs">
                   <div>
                     <label className="font-bold text-gray-700 block mb-1">Repartidor Asignado</label>
@@ -666,25 +527,15 @@ export default function Repartir({ onOpenDriverTrip }) {
                       />
                     </div>
                     <div>
-                      <label className="font-bold text-gray-700 block mb-1">Zona del Reparto</label>
+                      <label className="font-bold text-gray-700 block mb-1">WhatsApp del Chofer</label>
                       <input
                         type="text"
-                        value={zone}
-                        onChange={(e) => setZone(e.target.value)}
+                        value={driverPhone}
+                        onChange={(e) => setDriverPhone(e.target.value)}
+                        placeholder="549351..."
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-[#0c315b]"
                       />
                     </div>
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-gray-700 block mb-1">WhatsApp del Chofer</label>
-                    <input
-                      type="text"
-                      value={driverPhone}
-                      onChange={(e) => setDriverPhone(e.target.value)}
-                      placeholder="549351..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-[#0c315b]"
-                    />
                   </div>
                 </div>
 
@@ -852,7 +703,7 @@ export default function Repartir({ onOpenDriverTrip }) {
                       </div>
 
                       <p className="text-xs text-gray-700 font-semibold">
-                        🚚 {trip.driverName} · {trip.truck} · {trip.zone}
+                        🚚 {trip.driverName} · {trip.truck}
                       </p>
 
                       <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500">

@@ -120,6 +120,17 @@ export function saveOrder(order) {
   }
 }
 
+export function deleteStoredOrder(orderId) {
+  try {
+    const current = getStoredOrders();
+    const updated = current.filter(o => o.orderId !== orderId && o.id !== orderId);
+    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(updated));
+    return updated;
+  } catch (e) {
+    return [];
+  }
+}
+
 // Add an approved client order directly as a delivery stop into an active driver route
 export function addOrderToActiveTrip(order, targetTripId = 'VIAJE-25') {
   const currentTrips = getStoredTrips();

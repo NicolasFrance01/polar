@@ -316,6 +316,26 @@ export async function updateOrderStatus(orderId, status, tripId = null) {
   }
 }
 
+export async function updateOrder(orderId, orderData) {
+  const res = await fetch(`${API_BASE}/orders?id=${encodeURIComponent(orderId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(orderData)
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Error al actualizar el pedido');
+  return data;
+}
+
+export async function deleteOrder(orderId) {
+  const res = await fetch(`${API_BASE}/orders?id=${encodeURIComponent(orderId)}`, {
+    method: 'DELETE'
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Error al eliminar el pedido');
+  return data;
+}
+
 // ===================== DASHBOARD =====================
 export async function fetchDashboardKPIs() {
   try {

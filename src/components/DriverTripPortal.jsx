@@ -124,11 +124,24 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
     return () => navigator.geolocation.clearWatch(watchId);
   }, [isTransmittingGps, currentTrip?.id]);
 
+  // Leaflet cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (leafletRef.current) {
+        leafletRef.current.remove();
+        leafletRef.current = null;
+      }
+    };
+  }, []);
+
   // Render Leaflet map when switching to 'mapa' view
   useEffect(() => {
     if (viewMode !== 'mapa' || !window.L || !mapRef.current || !currentTrip) return;
 
     if (!leafletRef.current) {
+      if (mapRef.current._leaflet_id) {
+        mapRef.current._leaflet_id = null;
+      }
       const center = driverCoords
         ? [driverCoords.lat, driverCoords.lng]
         : currentTrip.driverCoords
@@ -162,6 +175,9 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
     }
 
     const latlngs = [];
+    if (activeDriverPos) {
+      latlngs.push([activeDriverPos.lat, activeDriverPos.lng]);
+    }
     (currentTrip.stops || []).forEach((s) => {
       if (!s.coords?.lat || !s.coords?.lng) return;
       const color =
@@ -282,6 +298,17 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
   const totalStops = stops.length || 1;
   const nextStopObj = stops.find((s) => s.isNext && s.status !== 'entregado') || stops.find((s) => s.status === 'en_camino' || s.status === 'pendiente');
 
+  // Origin from driver live coordinates or current device location
+  const driverOrigin = (driverCoords?.lat && driverCoords?.lng)
+    ? `${driverCoords.lat},${driverCoords.lng}`
+    : (currentTrip.driverCoords?.lat && currentTrip.driverCoords?.lng)
+    ? `${currentTrip.driverCoords.lat},${currentTrip.driverCoords.lng}`
+    : 'Current Location';
+
+  // Active pending stops for navigation
+  const pendingStops = stops.filter((s) => s.status !== 'entregado');
+  const activeRouteStops = pendingStops.length > 0 ? pendingStops : stops;
+
   return (
     <div className="min-h-screen bg-slate-100 font-sans pb-12 flex flex-col justify-between">
       {/* Top Driver Header */}
@@ -350,16 +377,16 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
           </div>
         </div>
 
-        {/* Launch Google Maps Multi-Stop Navigation */}
+        {/* Launch Google Maps Multi-Stop Navigation from Driver Current Location */}
         {stops.length > 0 && (
           <a
-            href={getGoogleMapsDirectionsAppUrl(stops)}
+            href={getGoogleMapsDirectionsAppUrl(activeRouteStops, driverOrigin)}
             target="_blank"
             rel="noopener noreferrer"
             className="w-full py-3 px-4 bg-gradient-to-r from-[#0c315b] to-[#1e5aa0] hover:from-[#092546] hover:to-[#174880] text-white font-extrabold text-xs sm:text-sm rounded-2xl flex items-center justify-center gap-2 shadow-sm transition active:scale-[0.99]"
           >
             <Navigation className="w-4 h-4 text-sky-300 animate-pulse" />
-            <span>Navegar en Google Maps (Ruta Completa)</span>
+            <span>Navegar en Google Maps (Desde mi ubicación)</span>
             <ExternalLink className="w-3.5 h-3.5 text-sky-200" />
           </a>
         )}
@@ -414,75 +441,76 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
               </div>
             </div>
 
-            {driverMapType === 'google' ? (
-              <div className="flex flex-col h-96 rounded-2xl overflow-hidden border border-gray-200 bg-gray-50 shadow-sm">
-                <div className="px-3 py-2 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between">
-                  <span className="font-bold text-[#0c315b] truncate">
-                    🛣️ Ruta con {stops.length} paradas unidas por calles reales
-                  </span>
-                  <a
-                    href={getGoogleMapsDirectionsAppUrl(stops)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded flex items-center gap-1"
-                  >
-                    <span>Abrir App</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </a>
-                </div>
-                <iframe
-                  title="Google Maps Route"
-                  src={getGoogleMapsRouteEmbedUrl(stops)}
-                  className="w-full flex-1 border-0"
-                  loading="lazy"
-                />
+            {/* Google Maps Route Container (Clean display, never unmounted to avoid overlap) */}
+            <div className={driverMapType === 'google' ? 'flex flex-col h-96 rounded-2xl overflow-hidden border border-gray-200 bg-gray-50 shadow-sm' : 'hidden'}>
+              <div className="px-3 py-2 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between">
+                <span className="font-bold text-[#0c315b] truncate">
+                  🛣️ Recorrido desde tu ubicación ({activeRouteStops.length} paradas)
+                </span>
+                <a
+                  href={getGoogleMapsDirectionsAppUrl(activeRouteStops, driverOrigin)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded flex items-center gap-1"
+                >
+                  <span>Abrir en Maps</span>
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </a>
               </div>
-            ) : (
-              <div className="relative h-96 rounded-2xl overflow-hidden border border-gray-200 bg-slate-200 shadow-sm">
-                <div ref={mapRef} className="w-full h-full z-0" />
+              <iframe
+                title="Google Maps Route"
+                src={getGoogleMapsRouteEmbedUrl(activeRouteStops, driverOrigin)}
+                className="w-full flex-1 border-0"
+                loading="lazy"
+              />
+            </div>
 
-                {selectedMapStop && (
-                  <div className="absolute bottom-3 left-3 right-3 z-20 bg-white p-3.5 rounded-xl border border-gray-200 shadow-lg space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2 min-w-0">
-                        <span className="w-6 h-6 rounded-md bg-[#0c315b] text-white font-bold text-xs flex items-center justify-center flex-shrink-0">
-                          #{selectedMapStop.orderNumber}
-                        </span>
-                        <strong className="text-xs text-gray-900 truncate">{selectedMapStop.clientName}</strong>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-[#0c315b] uppercase">
-                        {selectedMapStop.status}
+            {/* Leaflet GPS Radar Container (Hidden when Google Maps is active, preventing container leaks) */}
+            <div className={driverMapType === 'gps' ? 'relative h-96 rounded-2xl overflow-hidden border border-gray-200 bg-slate-200 shadow-sm' : 'hidden'}>
+              <div ref={mapRef} className="w-full h-full z-0" />
+
+              {selectedMapStop && (
+                <div className="absolute bottom-3 left-3 right-3 z-20 bg-white p-3.5 rounded-xl border border-gray-200 shadow-lg space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2 min-w-0">
+                      <span className="w-6 h-6 rounded-md bg-[#0c315b] text-white font-bold text-xs flex items-center justify-center flex-shrink-0">
+                        #{selectedMapStop.orderNumber}
                       </span>
+                      <strong className="text-xs text-gray-900 truncate">{selectedMapStop.clientName}</strong>
                     </div>
-                    <p className="text-[11px] text-gray-600">📍 {selectedMapStop.address}</p>
-
-                    <div className="grid grid-cols-3 gap-1.5 text-xs pt-1">
-                      <button
-                        onClick={() => handleSetAsNextStop(selectedMapStop)}
-                        className="py-1.5 rounded-lg border border-[#0c315b] text-[#0c315b] font-bold hover:bg-sky-50"
-                      >
-                        Ir ahora
-                      </button>
-                      <button
-                        onClick={() => {
-                          const q = encodeURIComponent(`${selectedMapStop.address}`);
-                          window.open(`https://www.google.com/maps/dir/?api=1&destination=${q}`, '_blank');
-                        }}
-                        className="py-1.5 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-50"
-                      >
-                        Google Maps
-                      </button>
-                      <button
-                        onClick={() => handleOpenDelivery(selectedMapStop)}
-                        className="py-1.5 rounded-lg bg-[#0c315b] text-white font-bold hover:bg-[#082342]"
-                      >
-                        Entregar
-                      </button>
-                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-[#0c315b] uppercase">
+                      {selectedMapStop.status}
+                    </span>
                   </div>
-                )}
-              </div>
-            )}
+                  <p className="text-[11px] text-gray-600">📍 {selectedMapStop.address}</p>
+
+                  <div className="grid grid-cols-3 gap-1.5 text-xs pt-1">
+                    <button
+                      onClick={() => handleSetAsNextStop(selectedMapStop)}
+                      className="py-1.5 rounded-lg border border-[#0c315b] text-[#0c315b] font-bold hover:bg-sky-50"
+                    >
+                      Ir ahora
+                    </button>
+                    <button
+                      onClick={() => {
+                        const q = encodeURIComponent(`${selectedMapStop.address}`);
+                        const originParam = driverOrigin ? `&origin=${encodeURIComponent(driverOrigin)}` : '';
+                        window.open(`https://www.google.com/maps/dir/?api=1${originParam}&destination=${q}&travelmode=driving`, '_blank');
+                      }}
+                      className="py-1.5 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-50"
+                    >
+                      Google Maps
+                    </button>
+                    <button
+                      onClick={() => handleOpenDelivery(selectedMapStop)}
+                      className="py-1.5 rounded-lg bg-[#0c315b] text-white font-bold hover:bg-[#082342]"
+                    >
+                      Entregar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -571,7 +599,8 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
                               const q = stop.coords?.lat && stop.coords?.lng
                                 ? `${stop.coords.lat},${stop.coords.lng}`
                                 : encodeURIComponent(`${stop.address}`);
-                              window.open(`https://www.google.com/maps/dir/?api=1&destination=${q}`, '_blank');
+                              const originParam = driverOrigin ? `&origin=${encodeURIComponent(driverOrigin)}` : '';
+                              window.open(`https://www.google.com/maps/dir/?api=1${originParam}&destination=${q}&travelmode=driving`, '_blank');
                             }}
                             className="py-2 rounded-lg border border-gray-300 font-bold text-gray-700 hover:bg-gray-50 flex items-center justify-center space-x-1"
                           >

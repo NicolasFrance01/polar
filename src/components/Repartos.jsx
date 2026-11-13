@@ -427,7 +427,7 @@ export default function Repartos({ onOpenDriverTrip }) {
               </div>
 
               <a
-                href={getGoogleMapsDirectionsAppUrl(currentTrip.stops || [])}
+                href={getGoogleMapsDirectionsAppUrl(currentTrip.stops || [], currentTrip.driverCoords ? `${currentTrip.driverCoords.lat},${currentTrip.driverCoords.lng}` : null)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-[#0c315b] border border-sky-200 text-xs font-bold flex items-center gap-1 transition"
@@ -438,64 +438,64 @@ export default function Repartos({ onOpenDriverTrip }) {
             </div>
           </div>
 
-          {liveMapMode === 'google' ? (
-            <div className="flex flex-col h-84 rounded-xl overflow-hidden border border-gray-200 bg-gray-50 shadow-2xs">
-              <div className="px-3 py-1.5 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between">
-                <span className="font-bold text-[#0c315b] truncate flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span>Ruta multi-parada trazada en Google Maps</span>
-                </span>
-                <span className="text-[10px] text-gray-500 font-mono">
-                  {currentTrip.driverCoords ? `GPS Chofer: ${currentTrip.driverCoords.lat.toFixed(4)}, ${currentTrip.driverCoords.lng.toFixed(4)}` : 'Esperando señal GPS'}
-                </span>
-              </div>
-              <iframe
-                title="Google Maps Route Live"
-                src={getGoogleMapsRouteEmbedUrl(currentTrip.stops || [])}
-                className="w-full flex-1 border-0"
-                loading="lazy"
-              />
+          {/* Google Maps Route Container */}
+          <div className={liveMapMode === 'google' ? 'flex flex-col h-84 rounded-xl overflow-hidden border border-gray-200 bg-gray-50 shadow-2xs' : 'hidden'}>
+            <div className="px-3 py-1.5 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between">
+              <span className="font-bold text-[#0c315b] truncate flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Ruta multi-parada trazada en Google Maps</span>
+              </span>
+              <span className="text-[10px] text-gray-500 font-mono">
+                {currentTrip.driverCoords ? `GPS Chofer: ${currentTrip.driverCoords.lat.toFixed(4)}, ${currentTrip.driverCoords.lng.toFixed(4)}` : 'Esperando señal GPS'}
+              </span>
             </div>
-          ) : (
-            <div className="relative border border-gray-200 rounded-xl overflow-hidden h-84 bg-slate-50">
-              {loadingLocation && (
-                <div className="absolute inset-0 z-30 bg-white flex flex-col items-center justify-center p-6 text-center space-y-3">
-                  <h3 className="text-base font-bold text-gray-900">Cargando mapa...</h3>
-                  <p className="text-xs text-gray-500">Conectando con seguimiento satelital</p>
-                </div>
-              )}
+            <iframe
+              title="Google Maps Route Live"
+              src={getGoogleMapsRouteEmbedUrl(currentTrip.stops || [], currentTrip.driverCoords ? `${currentTrip.driverCoords.lat},${currentTrip.driverCoords.lng}` : null)}
+              className="w-full flex-1 border-0"
+              loading="lazy"
+            />
+          </div>
 
-              <div ref={mapContainerRef} className="w-full h-full z-0"></div>
-
-              <div className="absolute top-3 right-3 z-10 flex space-x-1.5 bg-white/95 backdrop-blur-xs p-1 rounded-lg border border-gray-200 shadow-2xs">
-                <button 
-                  onClick={() => syncFromDatabase(true)}
-                  className="p-1.5 text-gray-600 hover:text-gray-900 rounded-md hover:bg-gray-100 transition" 
-                  title="Actualizar posiciones"
-                >
-                  <RotateCw className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={() => {
-                    if (leafletMapRef.current && currentTrip.driverCoords) {
-                      leafletMapRef.current.setView([currentTrip.driverCoords.lat, currentTrip.driverCoords.lng], 15, { animate: true });
-                    }
-                  }}
-                  className="p-1.5 text-[#0c315b] hover:bg-sky-50 rounded-md transition" 
-                  title="Centrar en el camión"
-                >
-                  <Crosshair className="w-4 h-4 text-[#0c315b]" />
-                </button>
+          {/* Leaflet GPS Radar Container (Hidden when Google Maps is active to prevent overlap/DOM recreation) */}
+          <div className={liveMapMode === 'gps' ? 'relative border border-gray-200 rounded-xl overflow-hidden h-84 bg-slate-50' : 'hidden'}>
+            {loadingLocation && (
+              <div className="absolute inset-0 z-30 bg-white flex flex-col items-center justify-center p-6 text-center space-y-3">
+                <h3 className="text-base font-bold text-gray-900">Cargando mapa...</h3>
+                <p className="text-xs text-gray-500">Conectando con seguimiento satelital</p>
               </div>
+            )}
 
-              <div className="absolute bottom-2 left-3 right-3 sm:right-auto z-10 bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] text-gray-700 border border-gray-200 flex items-center space-x-2 shadow-2xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0"></span>
-                <span className="truncate">
-                  Siguiendo a <strong>{currentTrip.driverName}</strong> · {completedStops}/{totalStops} paradas
-                </span>
-              </div>
+            <div ref={mapContainerRef} className="w-full h-full z-0"></div>
+
+            <div className="absolute top-3 right-3 z-10 flex space-x-1.5 bg-white/95 backdrop-blur-xs p-1 rounded-lg border border-gray-200 shadow-2xs">
+              <button 
+                onClick={() => syncFromDatabase(true)}
+                className="p-1.5 text-gray-600 hover:text-gray-900 rounded-md hover:bg-gray-100 transition" 
+                title="Actualizar posiciones"
+              >
+                <RotateCw className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => {
+                  if (leafletMapRef.current && currentTrip.driverCoords) {
+                    leafletMapRef.current.setView([currentTrip.driverCoords.lat, currentTrip.driverCoords.lng], 15, { animate: true });
+                  }
+                }}
+                className="p-1.5 text-[#0c315b] hover:bg-sky-50 rounded-md transition" 
+                title="Centrar en el camión"
+              >
+                <Crosshair className="w-4 h-4 text-[#0c315b]" />
+              </button>
             </div>
-          )}
+
+            <div className="absolute bottom-2 left-3 right-3 sm:right-auto z-10 bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] text-gray-700 border border-gray-200 flex items-center space-x-2 shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0"></span>
+              <span className="truncate">
+                Siguiendo a <strong>{currentTrip.driverName}</strong> · {completedStops}/{totalStops} paradas
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
