@@ -29,6 +29,12 @@ import {
   createTrip
 } from '../services/api';
 import { getStoredOrders } from '../services/tripSync';
+import { 
+  getGoogleMapsRouteEmbedUrl, 
+  getGoogleMapsDirectionsAppUrl, 
+  getWazeStopUrl, 
+  fetchOSRMStreetRoute 
+} from '../services/mapRouting';
 
 const DEFAULT_DRIVERS = [
   { id: 'usr-marcos', name: 'Marcos Gutiérrez', phone: '5491155550100', truck: 'Camión #1 (Mercedes Sprinter)' },
@@ -41,6 +47,7 @@ export default function Repartir({ onOpenDriverTrip }) {
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [focusedOrder, setFocusedOrder] = useState(null);
   const [drivers, setDrivers] = useState(DEFAULT_DRIVERS);
+  const [mapMode, setMapMode] = useState('google'); // 'google' | 'pines'
 
   // Route creation form
   const [selectedDriverName, setSelectedDriverName] = useState(DEFAULT_DRIVERS[0].name);
@@ -224,11 +231,15 @@ export default function Repartir({ onOpenDriverTrip }) {
     });
 
     if (selectedLatLngs.length > 1) {
-      window.L.polyline(selectedLatLngs, {
-        color: '#0c315b',
-        weight: 3,
-        dashArray: '6, 6'
-      }).addTo(layerGroupRef.current);
+      fetchOSRMStreetRoute(selectedLatLngs).then((streetPath) => {
+        if (!leafletMapRef.current || !layerGroupRef.current) return;
+        const lineCoords = (streetPath && streetPath.length > 0) ? streetPath : selectedLatLngs;
+        window.L.polyline(lineCoords, {
+          color: '#0284c7',
+          weight: 4,
+          opacity: 0.9
+        }).addTo(layerGroupRef.current);
+      });
     }
 
     if (focusedOrder?.coords?.lat && focusedOrder?.coords?.lng) {
@@ -336,26 +347,6 @@ export default function Repartir({ onOpenDriverTrip }) {
     window.open(`https://wa.me/${dPhone}?text=${text}`, '_blank');
   };
 
-  const getGoogleMapsEmbedUrl = (order) => {
-    if (!order) {
-      return 'https://maps.google.com/maps?q=Cordoba,%20Argentina&t=&z=13&ie=UTF8&iwloc=&output=embed';
-    }
-    const query = [order.address, order.neighborhood, 'Córdoba, Argentina'].filter(Boolean).join(', ');
-    return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=&z=16&ie=UTF8&iwloc=&output=embed`;
-  };
-
-  const getGoogleMapsDirectUrl = (order) => {
-    if (!order) return 'https://www.google.com/maps';
-    const query = [order.address, order.neighborhood, 'Córdoba, Argentina'].filter(Boolean).join(', ');
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-  };
-
-  const getWazeDirectUrl = (order) => {
-    if (!order) return 'https://waze.com';
-    const query = [order.address, order.neighborhood, 'Córdoba, Argentina'].filter(Boolean).join(', ');
-    return `https://waze.com/ul?q=${encodeURIComponent(query)}`;
-  };
-
   const filteredHistory = tripsHistory.filter((t) => {
     if (historyFilter === 'todos') return true;
     return t.status === historyFilter;
@@ -451,22 +442,97 @@ export default function Repartir({ onOpenDriverTrip }) {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             {/* LEFT: Orders list + Map */}
             <div className="lg:col-span-7 space-y-4">
-              {/* Interactive Multi-Pin Map + Focused Order Iframe */}
+              {/* Route Map Card (Google Maps Multi-Stop Real Streets & Leaflet option) */}
               <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 shadow-2xs space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <h2 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                  <div className="flex items-center space-x-2">
                     <MapPin className="w-4 h-4 text-[#0c315b]" />
-                    <span>Mapa de Pedidos y Recorrido</span>
-                  </h2>
-                  <span className="text-[11px] text-gray-500">
-                    Azul: disponible · Marino numerado: seleccionado
-                  </span>
+                    <h2 className="text-sm font-bold text-gray-900">
+                      Ruta Multi-Parada y Trazado de Calles
+                    </h2>
+                    {selectedOrders.length >= 2 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-[#0c315b]">
+                        {selectedOrders.length} paradas unidas
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {/* View Switcher: Google Maps (Directions) vs Pines */}
+                    <div className="flex items-center bg-gray-100 p-0.5 rounded-lg text-xs font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setMapMode('google')}
+                        className={`px-2.5 py-1 rounded-md transition ${
+                          mapMode === 'google'
+                            ? 'bg-white text-[#0c315b] shadow-2xs'
+                            : 'text-gray-500 hover:text-gray-900'
+                        }`}
+                      >
+                        Google Maps
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMapMode('pines');
+                          setTimeout(() => leafletMapRef.current?.invalidateSize(), 150);
+                        }}
+                        className={`px-2.5 py-1 rounded-md transition ${
+                          mapMode === 'pines'
+                            ? 'bg-white text-[#0c315b] shadow-2xs'
+                            : 'text-gray-500 hover:text-gray-900'
+                        }`}
+                      >
+                        Pines Leaflet
+                      </button>
+                    </div>
+
+                    {/* External navigation buttons */}
+                    <a
+                      href={getGoogleMapsDirectionsAppUrl(selectedOrders.length > 0 ? selectedOrders : (focusedOrder ? [focusedOrder] : []))}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-[#0c315b] border border-sky-200 text-xs font-bold flex items-center gap-1 transition"
+                      title="Abrir recorrido multi-parada completo en Google Maps"
+                    >
+                      <span>Abrir en Maps</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {/* Interactive Leaflet Map with all order pins */}
-                  <div className="relative h-60 sm:h-64 rounded-xl overflow-hidden border border-gray-200 bg-slate-100 flex flex-col">
-                    <div ref={mapContainerRef} className="w-full flex-1 min-h-[220px] z-0" />
+                {/* Map Display Container */}
+                {mapMode === 'google' ? (
+                  <div className="flex flex-col h-72 sm:h-84 rounded-xl overflow-hidden border border-gray-200 bg-gray-50 shadow-inner">
+                    <div className="px-3 py-1.5 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between">
+                      <span className="font-bold text-[#0c315b] truncate">
+                        {selectedOrders.length >= 2 ? (
+                          <>
+                            🛣️ Recorrido: {selectedOrders.map((o, idx) => `${idx + 1}. ${o.clientName}`).join(' ➔ ')}
+                          </>
+                        ) : selectedOrders.length === 1 ? (
+                          <>📍 Parada 1: {selectedOrders[0].clientName} ({selectedOrders[0].address})</>
+                        ) : focusedOrder ? (
+                          <>📍 Vista de pedido: {focusedOrder.clientName} ({focusedOrder.address})</>
+                        ) : (
+                          <>Google Maps Córdoba · Seleccioná pedidos para unir las paradas</>
+                        )}
+                      </span>
+                      <span className="text-gray-400 text-[10px] hidden sm:inline">
+                        Traza las calles exactas en Google Maps
+                      </span>
+                    </div>
+
+                    <iframe
+                      title="Google Maps Route"
+                      src={getGoogleMapsRouteEmbedUrl(selectedOrders.length > 0 ? selectedOrders : (focusedOrder ? [focusedOrder] : []))}
+                      className="w-full flex-1 border-0"
+                      loading="lazy"
+                    />
+                  </div>
+                ) : (
+                  <div className="relative h-72 sm:h-84 rounded-xl overflow-hidden border border-gray-200 bg-slate-100 flex flex-col shadow-inner">
+                    <div ref={mapContainerRef} className="w-full flex-1 min-h-[240px] z-0" />
                     <div className="absolute bottom-2 left-2 z-10 flex gap-1.5">
                       <button
                         type="button"
@@ -474,54 +540,13 @@ export default function Repartir({ onOpenDriverTrip }) {
                           leafletMapRef.current?.invalidateSize();
                           refreshMapPins();
                         }}
-                        className="bg-white/95 backdrop-blur-xs px-2 py-1 rounded-md text-[10px] font-bold text-gray-700 border border-gray-200 shadow-2xs hover:bg-white transition"
-                        title="Reajustar tamaño y pines"
+                        className="bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-md text-[10px] font-bold text-gray-700 border border-gray-200 shadow-2xs hover:bg-white transition"
                       >
                         Centrar Pines
                       </button>
                     </div>
                   </div>
-
-                  {/* Google Maps Embed of the focused order */}
-                  <div className="flex flex-col h-60 sm:h-64 rounded-xl overflow-hidden border border-gray-200 bg-gray-50 shadow-2xs">
-                    <div className="px-2.5 py-1.5 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between gap-1">
-                      <span className="font-bold text-[#0c315b] truncate flex items-center gap-1 min-w-0">
-                        <span>📍</span>
-                        <span className="truncate">{focusedOrder ? focusedOrder.clientName : 'Google Maps'}</span>
-                      </span>
-                      {focusedOrder && (
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <a
-                            href={getGoogleMapsDirectUrl(focusedOrder)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[10px] font-bold text-sky-700 hover:text-sky-900 bg-sky-50 hover:bg-sky-100 px-1.5 py-0.5 rounded flex items-center gap-0.5 transition"
-                            title="Abrir en Google Maps"
-                          >
-                            <span>Maps</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
-                          <a
-                            href={getWazeDirectUrl(focusedOrder)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded flex items-center gap-0.5 transition"
-                            title="Abrir en Waze"
-                          >
-                            <span>Waze</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                    <iframe
-                      title="Google Maps"
-                      src={getGoogleMapsEmbedUrl(focusedOrder)}
-                      className="w-full flex-1 border-0"
-                      loading="lazy"
-                    />
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Selectable Orders List */}

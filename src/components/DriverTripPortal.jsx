@@ -14,7 +14,8 @@ import {
   AlertTriangle,
   XCircle,
   Phone,
-  Flag
+  Flag,
+  ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { getStoredTrips, saveTrips } from '../services/tripSync';
@@ -25,11 +26,18 @@ import {
   setNextStop, 
   finishTrip 
 } from '../services/api';
+import {
+  getGoogleMapsRouteEmbedUrl,
+  getGoogleMapsDirectionsAppUrl,
+  getWazeStopUrl,
+  fetchOSRMStreetRoute
+} from '../services/mapRouting';
 
 export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = null, onBackToAdmin, onOpenComprobante }) {
   const [currentTrip, setCurrentTrip] = useState(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('lista'); // 'lista' | 'mapa'
+  const [driverMapType, setDriverMapType] = useState('google'); // 'google' | 'gps'
   const [selectedMapStop, setSelectedMapStop] = useState(null);
 
   // Delivery modal
@@ -182,16 +190,20 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
     });
 
     if (latlngs.length > 1) {
-      const line = window.L.polyline(latlngs, {
-        color: '#0c315b',
-        weight: 3,
-        dashArray: '6, 6'
-      }).addTo(map);
-      markersRef.current.push(line);
+      fetchOSRMStreetRoute(latlngs).then((streetPath) => {
+        if (!leafletRef.current) return;
+        const lineCoords = (streetPath && streetPath.length > 0) ? streetPath : latlngs;
+        const line = window.L.polyline(lineCoords, {
+          color: '#0284c7',
+          weight: 4,
+          opacity: 0.9
+        }).addTo(map);
+        markersRef.current.push(line);
+      });
     }
 
     setTimeout(() => map.invalidateSize(), 150);
-  }, [viewMode, currentTrip, driverCoords]);
+  }, [viewMode, driverMapType, currentTrip, driverCoords]);
 
   const handleOpenDelivery = (stop) => {
     setActiveStopModal(stop);
@@ -338,6 +350,20 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
           </div>
         </div>
 
+        {/* Launch Google Maps Multi-Stop Navigation */}
+        {stops.length > 0 && (
+          <a
+            href={getGoogleMapsDirectionsAppUrl(stops)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-3 px-4 bg-gradient-to-r from-[#0c315b] to-[#1e5aa0] hover:from-[#092546] hover:to-[#174880] text-white font-extrabold text-xs sm:text-sm rounded-2xl flex items-center justify-center gap-2 shadow-sm transition active:scale-[0.99]"
+          >
+            <Navigation className="w-4 h-4 text-sky-300 animate-pulse" />
+            <span>Navegar en Google Maps (Ruta Completa)</span>
+            <ExternalLink className="w-3.5 h-3.5 text-sky-200" />
+          </a>
+        )}
+
         {/* Toggle: Lista de Paradas vs Mapa en Vivo */}
         <div className="grid grid-cols-2 gap-2 bg-gray-200/70 p-1 rounded-xl text-xs font-bold">
           <button
@@ -363,50 +389,100 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
         {/* ===================== VIEW: MAPA EN VIVO ===================== */}
         {viewMode === 'mapa' && (
           <div className="space-y-3">
-            <div className="relative h-96 rounded-2xl overflow-hidden border border-gray-200 bg-slate-200 shadow-sm">
-              <div ref={mapRef} className="w-full h-full z-0" />
-
-              {selectedMapStop && (
-                <div className="absolute bottom-3 left-3 right-3 z-20 bg-white p-3.5 rounded-xl border border-gray-200 shadow-lg space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2 min-w-0">
-                      <span className="w-6 h-6 rounded-md bg-[#0c315b] text-white font-bold text-xs flex items-center justify-center flex-shrink-0">
-                        #{selectedMapStop.orderNumber}
-                      </span>
-                      <strong className="text-xs text-gray-900 truncate">{selectedMapStop.clientName}</strong>
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-[#0c315b] uppercase">
-                      {selectedMapStop.status}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-gray-600">📍 {selectedMapStop.address}</p>
-
-                  <div className="grid grid-cols-3 gap-1.5 text-xs pt-1">
-                    <button
-                      onClick={() => handleSetAsNextStop(selectedMapStop)}
-                      className="py-1.5 rounded-lg border border-[#0c315b] text-[#0c315b] font-bold hover:bg-sky-50"
-                    >
-                      Ir ahora
-                    </button>
-                    <button
-                      onClick={() => {
-                        const q = encodeURIComponent(`${selectedMapStop.address}`);
-                        window.open(`https://www.google.com/maps/dir/?api=1&destination=${q}`, '_blank');
-                      }}
-                      className="py-1.5 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-50"
-                    >
-                      Google Maps
-                    </button>
-                    <button
-                      onClick={() => handleOpenDelivery(selectedMapStop)}
-                      className="py-1.5 rounded-lg bg-[#0c315b] text-white font-bold hover:bg-[#082342]"
-                    >
-                      Entregar
-                    </button>
-                  </div>
-                </div>
-              )}
+            <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-gray-200 text-xs font-bold shadow-2xs">
+              <span className="text-gray-700">Tipo de mapa:</span>
+              <div className="flex bg-gray-100 p-0.5 rounded-lg">
+                <button
+                  onClick={() => setDriverMapType('google')}
+                  className={`px-3 py-1 rounded-md transition ${
+                    driverMapType === 'google' ? 'bg-white text-[#0c315b] shadow-2xs' : 'text-gray-500'
+                  }`}
+                >
+                  Ruta Google Maps
+                </button>
+                <button
+                  onClick={() => {
+                    setDriverMapType('gps');
+                    setTimeout(() => leafletRef.current?.invalidateSize(), 150);
+                  }}
+                  className={`px-3 py-1 rounded-md transition ${
+                    driverMapType === 'gps' ? 'bg-white text-[#0c315b] shadow-2xs' : 'text-gray-500'
+                  }`}
+                >
+                  GPS Satelital
+                </button>
+              </div>
             </div>
+
+            {driverMapType === 'google' ? (
+              <div className="flex flex-col h-96 rounded-2xl overflow-hidden border border-gray-200 bg-gray-50 shadow-sm">
+                <div className="px-3 py-2 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between">
+                  <span className="font-bold text-[#0c315b] truncate">
+                    🛣️ Ruta con {stops.length} paradas unidas por calles reales
+                  </span>
+                  <a
+                    href={getGoogleMapsDirectionsAppUrl(stops)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded flex items-center gap-1"
+                  >
+                    <span>Abrir App</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+                <iframe
+                  title="Google Maps Route"
+                  src={getGoogleMapsRouteEmbedUrl(stops)}
+                  className="w-full flex-1 border-0"
+                  loading="lazy"
+                />
+              </div>
+            ) : (
+              <div className="relative h-96 rounded-2xl overflow-hidden border border-gray-200 bg-slate-200 shadow-sm">
+                <div ref={mapRef} className="w-full h-full z-0" />
+
+                {selectedMapStop && (
+                  <div className="absolute bottom-3 left-3 right-3 z-20 bg-white p-3.5 rounded-xl border border-gray-200 shadow-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2 min-w-0">
+                        <span className="w-6 h-6 rounded-md bg-[#0c315b] text-white font-bold text-xs flex items-center justify-center flex-shrink-0">
+                          #{selectedMapStop.orderNumber}
+                        </span>
+                        <strong className="text-xs text-gray-900 truncate">{selectedMapStop.clientName}</strong>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-[#0c315b] uppercase">
+                        {selectedMapStop.status}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-600">📍 {selectedMapStop.address}</p>
+
+                    <div className="grid grid-cols-3 gap-1.5 text-xs pt-1">
+                      <button
+                        onClick={() => handleSetAsNextStop(selectedMapStop)}
+                        className="py-1.5 rounded-lg border border-[#0c315b] text-[#0c315b] font-bold hover:bg-sky-50"
+                      >
+                        Ir ahora
+                      </button>
+                      <button
+                        onClick={() => {
+                          const q = encodeURIComponent(`${selectedMapStop.address}`);
+                          window.open(`https://www.google.com/maps/dir/?api=1&destination=${q}`, '_blank');
+                        }}
+                        className="py-1.5 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-50"
+                      >
+                        Google Maps
+                      </button>
+                      <button
+                        onClick={() => handleOpenDelivery(selectedMapStop)}
+                        className="py-1.5 rounded-lg bg-[#0c315b] text-white font-bold hover:bg-[#082342]"
+                      >
+                        Entregar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

@@ -19,7 +19,7 @@ export function getStoredTrips() {
       }
       return parsed;
     }
-  } catch (e) {}
+  } catch (e) { }
   return {};
 }
 
@@ -32,7 +32,7 @@ export function saveTrips(tripsData) {
       channel.postMessage({ type: 'TRIPS_SYNC', trips: tripsData });
       channel.close();
     }
-  } catch (e) {}
+  } catch (e) { }
 }
 
 // Subscribe to real-time updates
@@ -52,7 +52,7 @@ export function subscribeToTripUpdates(callback) {
     if (e.key === STORAGE_KEY && e.newValue) {
       try {
         callback(JSON.parse(e.newValue));
-      } catch (err) {}
+      } catch (err) { }
     }
   };
   window.addEventListener('storage', handleStorage);
@@ -92,7 +92,7 @@ export function getStoredOrders() {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-  } catch (e) {}
+  } catch (e) { }
   return INITIAL_ORDERS;
 }
 
@@ -110,7 +110,7 @@ export function saveOrder(order) {
       updated = [order, ...current];
     }
     localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(updated));
-    
+
     // Save to Neon PostgreSQL database in background
     createOrder(order).catch(e => console.warn('DB order sync error:', e));
 

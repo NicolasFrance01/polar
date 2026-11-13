@@ -14,10 +14,10 @@ import {
   X
 } from 'lucide-react';
 
-export default function Sidebar({ 
-  activeTab, 
-  setActiveTab, 
-  isCollapsed, 
+export default function Sidebar({
+  activeTab,
+  setActiveTab,
+  isCollapsed,
   setIsCollapsed,
   unreadNotifications,
   mobileOpen,
@@ -56,14 +56,14 @@ export default function Sidebar({
         <div>
           {/* Top Brand Header */}
           <div className="h-16 border-b border-gray-100 flex items-center justify-between px-3.5">
-            <div 
+            <div
               onClick={() => handleSelectTab('dashboard')}
               className="flex items-center space-x-2.5 cursor-pointer overflow-hidden"
             >
               <div className="w-9 h-9 rounded-full overflow-hidden border border-sky-300 shadow-2xs bg-white flex items-center justify-center p-0.5 flex-shrink-0">
-                <img 
-                  src="/images/logo-polar.png" 
-                  alt="Polar" 
+                <img
+                  src="/images/logo-polar.png"
+                  alt="Polar"
                   className="w-full h-full object-contain rounded-full"
                 />
               </div>
@@ -107,17 +107,15 @@ export default function Sidebar({
                 <button
                   key={item.id}
                   onClick={() => handleSelectTab(item.id)}
-                  className={`w-full flex items-center rounded-xl text-xs font-semibold transition-all relative ${
-                    collapsed ? 'justify-center py-2.5 px-0' : 'space-x-3 px-3 py-2.5'
-                  } ${
-                    isActive
+                  className={`w-full flex items-center rounded-xl text-xs font-semibold transition-all relative ${collapsed ? 'justify-center py-2.5 px-0' : 'space-x-3 px-3 py-2.5'
+                    } ${isActive
                       ? 'bg-[#e0f2fe] text-[#0c315b] font-bold shadow-2xs border border-[#bae6fd]'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                  }`}
+                    }`}
                   title={collapsed ? item.label : undefined}
                 >
                   <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-[#0c315b]' : 'text-gray-500'}`} />
-                  
+
                   {!collapsed && (
                     <span className="flex-1 text-left truncate">{item.label}</span>
                   )}
@@ -179,9 +177,8 @@ export default function Sidebar({
     <>
       {/* Desktop Sticky Sidebar */}
       <aside
-        className={`hidden md:flex bg-white border-r border-gray-200 h-screen sticky top-0 z-40 flex-col justify-between transition-all duration-300 ease-in-out select-none shadow-2xs ${
-          isCollapsed ? 'w-18' : 'w-64'
-        }`}
+        className={`hidden md:flex bg-white border-r border-gray-200 h-screen sticky top-0 z-40 flex-col justify-between transition-all duration-300 ease-in-out select-none shadow-2xs ${isCollapsed ? 'w-18' : 'w-64'
+          }`}
       >
         {renderContent(false)}
       </aside>
@@ -189,7 +186,7 @@ export default function Sidebar({
       {/* Mobile Slide-Over Drawer */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 md:hidden flex">
-          <div 
+          <div
             className="fixed inset-0 bg-black/50 backdrop-blur-2xs"
             onClick={() => setMobileOpen(false)}
           />
