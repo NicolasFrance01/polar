@@ -23,7 +23,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { getStoredTrips, saveTrips } from '../services/tripSync';
+import { getStoredTrips, saveTrips, subscribeToTripUpdates } from '../services/tripSync';
 import { 
   fetchTripByNumber, 
   updateDriverCoords, 
@@ -93,6 +93,17 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
 
   useEffect(() => {
     loadTrip();
+    const unsub = subscribeToTripUpdates((trips) => {
+      if (!trips) return;
+      const targetId = `VIAJE-${resolvedTripNumber}`;
+      const match = trips[targetId] || trips[tripId];
+      if (match) {
+        setCurrentTrip(match);
+      }
+    });
+    return () => {
+      unsub && unsub();
+    };
   }, [resolvedTripNumber, tripId]);
 
   // Continuous Live GPS Watch + periodic sync to PostgreSQL

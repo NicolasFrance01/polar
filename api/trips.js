@@ -326,24 +326,52 @@ export default async function handler(req, res) {
       // 4. Add stop to existing trip
       if (action === 'add_stop') {
         const { tripId, stop } = req.body;
+        if (!tripId || !stop) {
+          return res.status(400).json({ error: 'tripId y stop son requeridos' });
+        }
         const stopId = stop.id || `stop-${Date.now()}`;
         const countRes = await query(`SELECT COALESCE(MAX(order_number), 0) as max_num FROM trip_stops WHERE trip_id = $1`, [tripId]);
         const orderNum = parseInt(countRes.rows[0].max_num, 10) + 1;
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-        await query(`
+        const insertedRes = await query(`
           INSERT INTO trip_stops (
             id, trip_id, order_number, order_ref, client_id, client_name, address, phone, 
             lat, lng, items, total, status, notes
           )
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          RETURNING *
         `, [
           stopId, tripId, orderNum, stop.orderRef || null, stop.clientId || null,
           stop.clientName, stop.address, stop.phone || '',
           stop.coords?.lat || null, stop.coords?.lng || null,
-          JSON.stringify(stop.items || []), stop.total || 0, 'pendiente', stop.notes || ''
+          JSON.stringify(stop.items || []), Number(stop.total) || 0, 'pendiente', stop.notes || ''
         ]);
 
-        return res.status(201).json({ success: true, stopId });
+        if (stop.orderRef) {
+          await query(`UPDATE orders SET trip_id = $1, status = 'En reparto' WHERE id = $2`, [tripId, stop.orderRef]).catch(() => {});
+        }
+
+        await query(`UPDATE trips SET last_update = $1 WHERE id = $2`, [timeStr, tripId]).catch(() => {});
+
+        const inserted = insertedRes.rows[0];
+        const formattedStop = {
+          id: inserted.id,
+          orderNumber: inserted.order_number,
+          orderRef: inserted.order_ref,
+          clientId: inserted.client_id,
+          clientName: inserted.client_name,
+          address: inserted.address,
+          phone: inserted.phone,
+          coords: (inserted.lat != null && inserted.lng != null) ? { lat: inserted.lat, lng: inserted.lng } : null,
+          items: inserted.items || [],
+          total: Number(inserted.total) || 0,
+          status: inserted.status,
+          isNext: false,
+          notes: inserted.notes || ''
+        };
+
+        return res.status(201).json({ success: true, stopId, stop: formattedStop, lastUpdate: timeStr });
       }
 
       // 5. Create new trip (Hoja de Ruta #XX) from selected orders
