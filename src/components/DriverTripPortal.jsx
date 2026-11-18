@@ -15,7 +15,11 @@ import {
   XCircle,
   Phone,
   Flag,
-  ExternalLink
+  ExternalLink,
+  Plus,
+  Trash2,
+  ChevronDown,
+  Package
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { getStoredTrips, saveTrips } from '../services/tripSync';
@@ -40,11 +44,13 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
   const [driverMapType, setDriverMapType] = useState('google'); // 'google' | 'gps'
   const [selectedMapStop, setSelectedMapStop] = useState(null);
 
-  // Delivery modal
+  // Delivery modal with full multi-product breakdown
   const [activeStopModal, setActiveStopModal] = useState(null);
-  const [deliveredQty20L, setDeliveredQty20L] = useState(2);
-  const [returnedEmpty, setReturnedEmpty] = useState(2);
+  const [deliveryItems, setDeliveryItems] = useState([]);
+  const [returnedEmpty, setReturnedEmpty] = useState(0);
   const [paymentType, setPaymentType] = useState('Efectivo');
+  const [deliveryNotes, setDeliveryNotes] = useState('');
+  const [showAddProductMenu, setShowAddProductMenu] = useState(false);
 
   // Skip / Absent / Cancel modal
   const [skipModalStop, setSkipModalStop] = useState(null);
@@ -221,12 +227,84 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
     setTimeout(() => map.invalidateSize(), 150);
   }, [viewMode, driverMapType, currentTrip, driverCoords]);
 
+  const CATALOG_PRODUCTS = [
+    { name: 'Bidón de Agua de Mesa 20L', price: 4200 },
+    { name: 'Bidón de Agua 12L con Canilla', price: 3300 },
+    { name: 'Sifón de Soda 1,5 Litros', price: 1300 },
+    { name: 'Dispenser Natural Frío/Calor POLAR', price: 48000 }
+  ];
+
   const handleOpenDelivery = (stop) => {
     setActiveStopModal(stop);
-    setDeliveredQty20L(stop.items?.find((i) => i.name?.includes('20L'))?.qty || 2);
-    setReturnedEmpty(2);
+    let items = [];
+    if (Array.isArray(stop.items)) {
+      items = stop.items;
+    } else if (typeof stop.items === 'string') {
+      try { items = JSON.parse(stop.items); } catch { items = []; }
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      items = [{ name: 'Bidón de Agua de Mesa 20L', qty: 1, price: 4200 }];
+    }
+
+    const cloned = items.map((it) => {
+      const name = it.name || 'Bidón de Agua de Mesa 20L';
+      let defaultPrice = 4200;
+      const lower = name.toLowerCase();
+      if (lower.includes('12l')) defaultPrice = 3300;
+      else if (lower.includes('sif') || lower.includes('soda')) defaultPrice = 1300;
+      else if (lower.includes('dispenser')) defaultPrice = 48000;
+
+      return {
+        name,
+        qty: Number(it.qty) || 1,
+        price: Number(it.price) || defaultPrice
+      };
+    });
+
+    setDeliveryItems(cloned);
+
+    // Initial returned empty calculation: count all returnable containers ordered
+    const returnableCount = cloned.reduce((acc, it) => {
+      const lower = (it.name || '').toLowerCase();
+      if (lower.includes('bid') || lower.includes('sif') || lower.includes('soda')) {
+        return acc + (Number(it.qty) || 0);
+      }
+      return acc;
+    }, 0);
+    setReturnedEmpty(returnableCount > 0 ? returnableCount : 0);
+
     setPaymentType(stop.paymentMethod || 'Efectivo');
+    setDeliveryNotes(stop.notes || '');
+    setShowAddProductMenu(false);
   };
+
+  const handleUpdateItemQty = (index, delta) => {
+    setDeliveryItems(prev => {
+      const updated = [...prev];
+      const newQty = Math.max(0, (Number(updated[index].qty) || 0) + delta);
+      updated[index] = { ...updated[index], qty: newQty };
+      return updated;
+    });
+  };
+
+  const handleRemoveItem = (index) => {
+    setDeliveryItems(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleAddCatalogProduct = (prod) => {
+    setDeliveryItems(prev => {
+      const existingIdx = prev.findIndex(it => it.name.toLowerCase() === prod.name.toLowerCase());
+      if (existingIdx >= 0) {
+        const updated = [...prev];
+        updated[existingIdx] = { ...updated[existingIdx], qty: (Number(updated[existingIdx].qty) || 0) + 1 };
+        return updated;
+      }
+      return [...prev, { name: prod.name, qty: 1, price: prod.price }];
+    });
+    setShowAddProductMenu(false);
+  };
+
+  const calculatedTotal = deliveryItems.reduce((acc, it) => acc + ((Number(it.qty) || 0) * (Number(it.price) || 0)), 0);
 
   const handleConfirmDelivery = async () => {
     if (!activeStopModal || !currentTrip) return;
@@ -236,17 +314,76 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
     } catch (e) {}
 
     const deliveredTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const finalItems = deliveryItems.filter(it => (Number(it.qty) || 0) > 0);
 
+    // 1. API update
     await updateStopStatus(activeStopModal.id, {
       tripId: currentTrip.id,
       status: 'entregado',
       deliveredAt: deliveredTime,
       returnedEmpty,
       paymentMethod: paymentType,
+      items: finalItems,
+      total: calculatedTotal,
+      notes: deliveryNotes,
       isNext: false,
       driverLat: driverCoords?.lat ?? null,
       driverLng: driverCoords?.lng ?? null
     });
+
+    // 2. LocalStorage sync for offline / same-browser instant reflection
+    const stored = getStoredTrips();
+    if (stored && stored[currentTrip.id]) {
+      const stopIdx = stored[currentTrip.id].stops?.findIndex(s => s.id === activeStopModal.id);
+      if (stopIdx >= 0) {
+        stored[currentTrip.id].stops[stopIdx] = {
+          ...stored[currentTrip.id].stops[stopIdx],
+          status: 'entregado',
+          deliveredAt: deliveredTime,
+          delivered_at: deliveredTime,
+          returnedEmpty,
+          returned_empty: returnedEmpty,
+          paymentMethod: paymentType,
+          payment_method: paymentType,
+          items: finalItems,
+          total: calculatedTotal,
+          notes: deliveryNotes,
+          isNext: false
+        };
+        // Auto-advance next pending stop
+        const nextPending = stored[currentTrip.id].stops.find(s => s.status === 'pendiente' || s.status === 'en_camino');
+        if (nextPending) {
+          nextPending.isNext = true;
+          nextPending.status = 'en_camino';
+        }
+        saveTrips(stored);
+      }
+    }
+
+    // 3. Update client containers and balance in localStorage if client exists
+    try {
+      const rawClients = localStorage.getItem('polar_clients_v2');
+      if (rawClients) {
+        const clients = JSON.parse(rawClients);
+        const cliIdx = clients.findIndex(c => c.id === activeStopModal.clientId || c.name === activeStopModal.clientName);
+        if (cliIdx >= 0) {
+          if (paymentType === 'Fiado') {
+            clients[cliIdx].balance = (Number(clients[cliIdx].balance) || 0) - calculatedTotal;
+          }
+          const bidonesDelivered = finalItems.filter(i => (i.name || '').toLowerCase().includes('bid')).reduce((sum, i) => sum + (Number(i.qty) || 0), 0);
+          const sifonesDelivered = finalItems.filter(i => (i.name || '').toLowerCase().includes('sif')).reduce((sum, i) => sum + (Number(i.qty) || 0), 0);
+          const currentHeld = clients[cliIdx].containersHeld || { bidon20L: 0, bidon12L: 0, sifon: 0 };
+          clients[cliIdx].containersHeld = {
+            ...currentHeld,
+            bidon20L: Math.max(0, (currentHeld.bidon20L || 0) + bidonesDelivered - returnedEmpty),
+            sifon: Math.max(0, (currentHeld.sifon || 0) + sifonesDelivered)
+          };
+          localStorage.setItem('polar_clients_v2', JSON.stringify(clients));
+        }
+      }
+    } catch (e) {
+      console.warn('Local client balance sync warning:', e);
+    }
 
     setActiveStopModal(null);
     await loadTrip();
@@ -700,36 +837,175 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
 
       {/* DELIVERY MODAL */}
       {activeStopModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-2xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-gray-200">
-            <div className="flex justify-between items-center border-b pb-2">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-5 space-y-3.5 shadow-2xl border border-gray-200 max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-start border-b border-gray-100 pb-2.5">
               <div>
-                <h3 className="font-extrabold text-sm text-gray-900">Registrar Entrega</h3>
-                <span className="text-xs text-gray-500">{activeStopModal.clientName}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-sky-800 bg-sky-50 px-2 py-0.5 rounded-full inline-block mb-1">
+                  Parada #{activeStopModal.orderNumber}
+                </span>
+                <h3 className="font-black text-base text-gray-900 leading-tight">
+                  {activeStopModal.clientName}
+                </h3>
+                <span className="text-xs text-gray-500 block truncate max-w-[280px]">
+                  {activeStopModal.address}
+                </span>
               </div>
-              <button onClick={() => setActiveStopModal(null)} className="p-1 text-gray-400 hover:text-gray-700">
+              <button 
+                type="button"
+                onClick={() => setActiveStopModal(null)} 
+                className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div>
-              <span className="text-xs font-bold text-gray-700 block mb-1">Bidones Llenos Bajados:</span>
-              <div className="flex items-center space-x-3 bg-gray-50 p-2.5 rounded-xl border border-gray-200">
-                <button onClick={() => setDeliveredQty20L(Math.max(1, deliveredQty20L - 1))} className="w-8 h-8 rounded-lg bg-white border font-bold">-</button>
-                <span className="font-black text-base flex-1 text-center">{deliveredQty20L}x Unidades</span>
-                <button onClick={() => setDeliveredQty20L(deliveredQty20L + 1)} className="w-8 h-8 rounded-lg bg-[#0c315b] text-white font-bold">+</button>
+            {/* List of Products (All items from the client's order) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-gray-800">
+                <span className="flex items-center gap-1.5">
+                  <Package className="w-4 h-4 text-[#0c315b]" />
+                  <span>Productos a Entregar ({deliveryItems.length}):</span>
+                </span>
+                <span className="text-[10px] text-gray-400 font-normal">
+                  Ajustá cantidades si hubo cambios
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                {deliveryItems.map((item, idx) => {
+                  const itemSubtotal = (Number(item.qty) || 0) * (Number(item.price) || 0);
+                  return (
+                    <div 
+                      key={idx} 
+                      className="flex items-center justify-between bg-gray-50 hover:bg-gray-100/70 p-2.5 rounded-xl border border-gray-200 gap-2 transition"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <span className="font-bold text-xs text-gray-900 block truncate">
+                          {item.name}
+                        </span>
+                        <span className="text-[10px] text-gray-500 font-mono">
+                          ${Number(item.price || 0).toLocaleString('es-AR')} c/u
+                        </span>
+                      </div>
+
+                      {/* Quantity Stepper */}
+                      <div className="flex items-center space-x-1.5 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateItemQty(idx, -1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-gray-300 font-bold text-gray-700 hover:bg-gray-100 flex items-center justify-center transition active:scale-95 text-xs shadow-2xs"
+                        >
+                          -
+                        </button>
+                        <span className="w-8 text-center font-black text-xs text-[#0c315b]">
+                          {item.qty}x
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateItemQty(idx, 1)}
+                          className="w-7 h-7 rounded-lg bg-[#0c315b] text-white font-bold hover:bg-[#082342] flex items-center justify-center transition active:scale-95 text-xs shadow-2xs"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      {/* Subtotal */}
+                      <div className="w-18 text-right font-black text-xs text-gray-900 flex-shrink-0 font-mono">
+                        ${itemSubtotal.toLocaleString('es-AR')}
+                      </div>
+
+                      {/* Remove item button if 0 */}
+                      {item.qty === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(idx)}
+                          className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded"
+                          title="Quitar producto"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Add Extra Product Toggle */}
+              <div className="pt-1">
+                {!showAddProductMenu ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddProductMenu(true)}
+                    className="text-[11px] font-bold text-[#0c315b] hover:text-sky-700 flex items-center gap-1 transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Agregar otro producto que pidió el cliente en puerta</span>
+                  </button>
+                ) : (
+                  <div className="p-2.5 bg-sky-50/70 border border-sky-200 rounded-xl space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-[#0c315b]">
+                      <span>Seleccioná el producto a sumar:</span>
+                      <button 
+                        type="button"
+                        onClick={() => setShowAddProductMenu(false)}
+                        className="text-gray-400 hover:text-gray-700 text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {CATALOG_PRODUCTS.map((prod, pIdx) => (
+                        <button
+                          key={pIdx}
+                          type="button"
+                          onClick={() => handleAddCatalogProduct(prod)}
+                          className="text-left p-2 rounded-lg bg-white border border-gray-200 hover:border-[#0c315b] hover:bg-sky-50 text-xs transition flex justify-between items-center"
+                        >
+                          <span className="font-semibold text-gray-900 truncate mr-1">{prod.name}</span>
+                          <span className="font-bold text-[#0c315b] flex-shrink-0">${prod.price.toLocaleString('es-AR')}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
+            {/* Envases Vacíos Retirados */}
             <div>
-              <span className="text-xs font-bold text-gray-700 block mb-1">Envases Vacíos Retirados:</span>
-              <div className="flex items-center space-x-3 bg-sky-50 p-2.5 rounded-xl border border-sky-200">
-                <button onClick={() => setReturnedEmpty(Math.max(0, returnedEmpty - 1))} className="w-8 h-8 rounded-lg bg-white border font-bold">-</button>
-                <span className="font-black text-base flex-1 text-center text-[#0c315b]">{returnedEmpty}x Vacíos</span>
-                <button onClick={() => setReturnedEmpty(returnedEmpty + 1)} className="w-8 h-8 rounded-lg bg-[#0c315b] text-white font-bold">+</button>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold text-gray-700">Envases Vacíos Retirados:</span>
+                <span className="text-[10px] text-sky-800 font-semibold bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
+                  Esperados: {deliveryItems.reduce((acc, it) => {
+                    const l = (it.name || '').toLowerCase();
+                    return (l.includes('bid') || l.includes('sif') || l.includes('soda')) ? acc + (Number(it.qty) || 0) : acc;
+                  }, 0)} vacíos
+                </span>
+              </div>
+              <div className="flex items-center space-x-3 bg-sky-50/60 p-2 rounded-xl border border-sky-200">
+                <button 
+                  type="button"
+                  onClick={() => setReturnedEmpty(Math.max(0, returnedEmpty - 1))} 
+                  className="w-8 h-8 rounded-lg bg-white border border-sky-300 font-bold text-gray-700 hover:bg-sky-100 flex items-center justify-center transition active:scale-95 shadow-2xs"
+                >
+                  -
+                </button>
+                <span className="font-black text-sm flex-1 text-center text-[#0c315b]">
+                  {returnedEmpty}x Vacíos Retirados
+                </span>
+                <button 
+                  type="button"
+                  onClick={() => setReturnedEmpty(returnedEmpty + 1)} 
+                  className="w-8 h-8 rounded-lg bg-[#0c315b] text-white font-bold hover:bg-[#082342] flex items-center justify-center transition active:scale-95 shadow-2xs"
+                >
+                  +
+                </button>
               </div>
             </div>
 
+            {/* Forma de Pago */}
             <div>
               <span className="text-xs font-bold text-gray-700 block mb-1">Forma de Pago:</span>
               <div className="grid grid-cols-3 gap-1.5 text-xs">
@@ -740,26 +1016,42 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
                     onClick={() => setPaymentType(m)}
                     className={`py-2 rounded-lg font-bold border transition ${
                       paymentType === m
-                        ? 'bg-[#0c315b] text-white border-[#0c315b]'
-                        : 'bg-gray-50 text-gray-700 border-gray-200'
+                        ? 'bg-[#0c315b] text-white border-[#0c315b] shadow-xs'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
                     }`}
                   >
                     {m}
                   </button>
                 ))}
               </div>
+              {paymentType === 'Fiado' && (
+                <p className="text-[11px] text-amber-800 bg-amber-50 p-2 rounded-lg mt-1.5 border border-amber-200 font-medium">
+                  ⚠️ Se anotará en la cuenta corriente del cliente (Cobro $0 en mano).
+                </p>
+              )}
             </div>
 
-            <div className="pt-2 border-t flex justify-between items-center text-sm font-bold">
-              <span>Total a cobrar:</span>
-              <span className="text-base font-black text-[#0c315b]">${Number(activeStopModal.total || 0).toLocaleString()}</span>
+            {/* Total a Cobrar Dinámico */}
+            <div className="pt-2 border-t border-gray-100 flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-200">
+              <div>
+                <span className="text-gray-500 block text-[11px] font-medium">Total de la Entrega:</span>
+                <span className="text-[10px] text-gray-400">
+                  {deliveryItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0)} unidades bajadas
+                </span>
+              </div>
+              <span className="text-lg font-black text-[#0c315b] font-mono">
+                ${calculatedTotal.toLocaleString('es-AR')}
+              </span>
             </div>
 
+            {/* Confirm Button */}
             <button
+              type="button"
               onClick={handleConfirmDelivery}
-              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md transition"
+              className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-extrabold text-xs shadow-md transition uppercase tracking-wider flex items-center justify-center space-x-1.5"
             >
-              CONFIRMAR Y SINCRONIZAR CON PLANTA
+              <Check className="w-4 h-4" />
+              <span>CONFIRMAR ENTREGA (${calculatedTotal.toLocaleString('es-AR')})</span>
             </button>
           </div>
         </div>

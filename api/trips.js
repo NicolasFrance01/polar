@@ -123,6 +123,8 @@ export default async function handler(req, res) {
           deliveredAt,
           paymentMethod,
           returnedEmpty,
+          items,
+          total,
           isNext,
           notes,
           skipReason,
@@ -131,6 +133,8 @@ export default async function handler(req, res) {
         } = req.body;
 
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const itemsJson = items ? JSON.stringify(items) : null;
+        const totalNum = total != null ? Number(total) : null;
 
         const result = await query(`
           UPDATE trip_stops
@@ -140,8 +144,10 @@ export default async function handler(req, res) {
               returned_empty = COALESCE($4, returned_empty),
               is_next = COALESCE($5, is_next),
               notes = COALESCE($6, notes),
-              skip_reason = COALESCE($7, skip_reason)
-          WHERE id = $8
+              skip_reason = COALESCE($7, skip_reason),
+              items = COALESCE($8, items),
+              total = COALESCE($9, total)
+          WHERE id = $10
           RETURNING *
         `, [
           status ?? null,
@@ -151,6 +157,8 @@ export default async function handler(req, res) {
           isNext ?? null,
           notes ?? null,
           skipReason ?? null,
+          itemsJson,
+          totalNum,
           stopId
         ]);
 
@@ -174,9 +182,18 @@ export default async function handler(req, res) {
 
         // Sync order status if linked via order_ref
         if (updatedStop?.order_ref && status === 'entregado') {
-          await query(`UPDATE orders SET status = 'Entregado' WHERE id = $1`, [updatedStop.order_ref]).catch(() => { });
+          if (itemsJson || totalNum != null) {
+            await query(`UPDATE orders SET status = 'Entregado', items = COALESCE($1, items), total = COALESCE($2, total) WHERE id = $3`, [itemsJson, totalNum, updatedStop.order_ref]).catch(() => { });
+          } else {
+            await query(`UPDATE orders SET status = 'Entregado' WHERE id = $1`, [updatedStop.order_ref]).catch(() => { });
+          }
         } else if (updatedStop?.order_ref && status === 'cancelado') {
           await query(`UPDATE orders SET status = 'Cancelado' WHERE id = $1`, [updatedStop.order_ref]).catch(() => { });
+        }
+
+        // If paid with Fiado, update client's fiado balance
+        if (paymentMethod === 'Fiado' && updatedStop?.client_id && totalNum > 0) {
+          await query(`UPDATE clients SET fiado_balance = fiado_balance + $1 WHERE id = $2`, [totalNum, updatedStop.client_id]).catch(() => { });
         }
 
         // Also update driver GPS coordinates & last_update on trips if provided
