@@ -1,14 +1,23 @@
 import { query } from './db.js';
 
+let schemaEnsured = false;
+async function ensureClientColumns() {
+  if (schemaEnsured) return;
+  await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS delivery_history JSONB DEFAULT '[]'::jsonb;`);
+  schemaEnsured = true;
+}
+
 export default async function handler(req, res) {
   const { method } = req;
 
   try {
+    await ensureClientColumns();
+
     if (method === 'GET') {
       const { search } = req.query || {};
       let sql = `
         SELECT id, name, phone, address, neighborhood, notes, lat, lng,
-               containers_held, fiado_balance::float, active, created_at
+               containers_held, fiado_balance::float, delivery_history, active, created_at
         FROM clients 
         WHERE active = true
       `;
@@ -26,19 +35,20 @@ export default async function handler(req, res) {
     }
 
     if (method === 'POST') {
-      const { name, phone, address, neighborhood, notes, lat, lng, containers_held, fiado_balance } = req.body;
+      const { name, phone, address, neighborhood, notes, lat, lng, containers_held, fiado_balance, delivery_history } = req.body;
       const id = req.body.id || `cli-${Date.now()}`;
 
       const result = await query(`
         INSERT INTO clients (
-          id, name, phone, address, neighborhood, notes, lat, lng, containers_held, fiado_balance
+          id, name, phone, address, neighborhood, notes, lat, lng, containers_held, fiado_balance, delivery_history
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING *
       `, [
         id, name, phone, address, neighborhood, notes || '', lat || null, lng || null,
         JSON.stringify(containers_held || { bidon20L: 0, bidon12L: 0, sifon: 0 }),
-        fiado_balance || 0
+        fiado_balance || 0,
+        JSON.stringify(delivery_history || [])
       ]);
 
       return res.status(201).json(result.rows[0]);
@@ -46,7 +56,7 @@ export default async function handler(req, res) {
 
     if (method === 'PUT') {
       const { id } = req.query;
-      const { name, phone, address, neighborhood, notes, lat, lng, containers_held, fiado_balance } = req.body;
+      const { name, phone, address, neighborhood, notes, lat, lng, containers_held, fiado_balance, delivery_history } = req.body;
 
       const result = await query(`
         UPDATE clients
@@ -58,13 +68,16 @@ export default async function handler(req, res) {
             lat = COALESCE($6, lat),
             lng = COALESCE($7, lng),
             containers_held = COALESCE($8, containers_held),
-            fiado_balance = COALESCE($9, fiado_balance)
-        WHERE id = $10
+            fiado_balance = COALESCE($9, fiado_balance),
+            delivery_history = COALESCE($10, delivery_history)
+        WHERE id = $11
         RETURNING *
       `, [
         name, phone, address, neighborhood, notes, lat, lng,
         containers_held ? JSON.stringify(containers_held) : null,
-        fiado_balance, id
+        fiado_balance,
+        delivery_history ? JSON.stringify(delivery_history) : null,
+        id
       ]);
 
       if (result.rowCount === 0) {

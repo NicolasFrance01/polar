@@ -22,6 +22,8 @@ const EMPTY_FORM = {
   cost: '',
   stockPlanta: 100,
   stockCamion: 20,
+  stockVaciosPlanta: 50,
+  stockVaciosCamion: 10,
   returnable: true,
   containerType: '',
   subscriptionPlan: '',
@@ -69,6 +71,8 @@ export default function Productos() {
       cost: prod.cost ?? '',
       stockPlanta: prod.stockPlanta ?? prod.stock_planta ?? 0,
       stockCamion: prod.stockCamion ?? prod.stock_camion ?? 0,
+      stockVaciosPlanta: prod.stockVaciosPlanta ?? prod.stock_vacios_planta ?? 0,
+      stockVaciosCamion: prod.stockVaciosCamion ?? prod.stock_vacios_camion ?? 0,
       returnable: prod.returnable ?? true,
       containerType: prod.containerType ?? prod.container_type ?? '',
       subscriptionPlan: prod.subscriptionPlan ?? prod.subscription_plan ?? '',
@@ -110,6 +114,8 @@ export default function Productos() {
         cost: form.cost !== '' ? Number(form.cost) : null,
         stockPlanta: Number(form.stockPlanta) || 0,
         stockCamion: Number(form.stockCamion) || 0,
+        stockVaciosPlanta: Number(form.stockVaciosPlanta) || 0,
+        stockVaciosCamion: Number(form.stockVaciosCamion) || 0,
         returnable: Boolean(form.returnable),
         containerType: form.containerType.trim(),
         subscriptionPlan: form.subscriptionPlan.trim(),
@@ -231,10 +237,15 @@ export default function Productos() {
 
                     <div className="flex items-center gap-2">
                       <div className="text-right">
-                        <span className="text-[10px] text-gray-400 font-semibold block uppercase">Stock</span>
-                        <span className="font-bold text-xs text-gray-800">
-                          {prod.stockPlanta ?? prod.stock_planta ?? 0} u.
+                        <span className="text-[10px] text-gray-400 font-semibold block uppercase">Stock Lleno</span>
+                        <span className="font-bold text-xs text-gray-800 block">
+                          Planta: {prod.stockPlanta ?? prod.stock_planta ?? 0} | Camión: {prod.stockCamion ?? prod.stock_camion ?? 0}
                         </span>
+                        {prod.returnable && (
+                          <span className="font-semibold text-[10px] text-sky-700 block">
+                            Vacíos: Planta {prod.stockVaciosPlanta ?? prod.stock_vacios_planta ?? 0} | Camión {prod.stockVaciosCamion ?? prod.stock_vacios_camion ?? 0}
+                          </span>
+                        )}
                       </div>
                       <button
                         onClick={() => handleDeleteProduct(prod)}
@@ -358,15 +369,74 @@ export default function Productos() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg font-bold outline-none focus:border-[#0c315b]"
                   />
                 </div>
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="font-bold text-gray-700 block mb-1">Stock Planta</label>
-                  <input
-                    type="number"
-                    value={form.stockPlanta}
-                    onChange={(e) => setForm({ ...form, stockPlanta: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-[#0c315b]"
-                  />
+              </div>
+
+              {/* Stock Llenos */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+                <span className="font-bold text-gray-800 block text-[11px] uppercase tracking-wide">
+                  📦 Stock de Productos Llenos
+                </span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-gray-600 block mb-1">Llenos en Planta</label>
+                    <input
+                      type="number"
+                      value={form.stockPlanta}
+                      onChange={(e) => setForm({ ...form, stockPlanta: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-[#0c315b] bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-gray-600 block mb-1">Llenos en Camión</label>
+                    <input
+                      type="number"
+                      value={form.stockCamion}
+                      onChange={(e) => setForm({ ...form, stockCamion: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-[#0c315b] bg-white"
+                    />
+                  </div>
                 </div>
+              </div>
+
+              {/* Envase Retornable y Stock de Vacíos */}
+              <div className="bg-sky-50/60 border border-sky-200 rounded-xl p-3 space-y-2.5">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.returnable}
+                    onChange={(e) => setForm({ ...form, returnable: e.target.checked })}
+                    className="rounded text-[#0c315b]"
+                  />
+                  <span className="font-black text-gray-800">Producto con Envase Retornable</span>
+                </label>
+
+                {form.returnable && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="font-bold text-sky-900 block text-[11px] uppercase tracking-wide">
+                      🔄 Stock de Envases Vacíos Disponibles
+                    </span>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-bold text-gray-600 block mb-1">Vacíos en Planta</label>
+                        <input
+                          type="number"
+                          value={form.stockVaciosPlanta}
+                          onChange={(e) => setForm({ ...form, stockVaciosPlanta: e.target.value })}
+                          className="w-full px-3 py-2 border border-sky-300 rounded-lg outline-none focus:border-[#0c315b] bg-white font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-bold text-gray-600 block mb-1">Vacíos en Camión</label>
+                        <input
+                          type="number"
+                          value={form.stockVaciosCamion}
+                          onChange={(e) => setForm({ ...form, stockVaciosCamion: e.target.value })}
+                          className="w-full px-3 py-2 border border-sky-300 rounded-lg outline-none focus:border-[#0c315b] bg-white font-bold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -380,27 +450,15 @@ export default function Productos() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                <div>
-                  <label className="font-bold text-gray-700 block mb-1">Plan / Promo (opcional)</label>
-                  <input
-                    type="text"
-                    value={form.subscriptionPlan}
-                    onChange={(e) => setForm({ ...form, subscriptionPlan: e.target.value })}
-                    placeholder="Ej: Plan Clásico 4x mes"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-[#0c315b]"
-                  />
-                </div>
-
-                <label className="flex items-center space-x-2 cursor-pointer pt-2 sm:pt-5">
-                  <input
-                    type="checkbox"
-                    checked={form.returnable}
-                    onChange={(e) => setForm({ ...form, returnable: e.target.checked })}
-                    className="rounded text-[#0c315b]"
-                  />
-                  <span className="font-bold text-gray-700">Envase Retornable</span>
-                </label>
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">Plan / Promo (opcional)</label>
+                <input
+                  type="text"
+                  value={form.subscriptionPlan}
+                  onChange={(e) => setForm({ ...form, subscriptionPlan: e.target.value })}
+                  placeholder="Ej: Plan Clásico 4x mes"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-[#0c315b]"
+                />
               </div>
 
               {feedback && (

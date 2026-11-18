@@ -11,7 +11,9 @@ export const POLAR_PRODUCTS = [
     image: '/images/bidon-20l.png',
     description: 'Agua purificada de máxima pureza y frescura. Envase de policarbonato reforzado retornable.',
     stockPlanta: 140,
-    stockCamion: 45
+    stockCamion: 45,
+    stockVaciosPlanta: 80,
+    stockVaciosCamion: 15
   },
   {
     id: 'prod-12l',
@@ -25,7 +27,9 @@ export const POLAR_PRODUCTS = [
     image: '/images/bidon-12l.png',
     description: 'Bidón compacto con canilla dosificadora integrada. Ideal para mesadas o familias reducidas.',
     stockPlanta: 95,
-    stockCamion: 25
+    stockCamion: 25,
+    stockVaciosPlanta: 30,
+    stockVaciosCamion: 8
   },
   {
     id: 'prod-soda',
@@ -40,7 +44,9 @@ export const POLAR_PRODUCTS = [
     image: '/images/sifon-1-5l.png',
     description: 'Soda artesanal con gasificado enérgico y pico dosificador de alta presión.',
     stockPlanta: 210,
-    stockCamion: 60
+    stockCamion: 60,
+    stockVaciosPlanta: 120,
+    stockVaciosCamion: 24
   },
   {
     id: 'prod-dispenser',
@@ -54,7 +60,9 @@ export const POLAR_PRODUCTS = [
     image: '/images/dispenser.png',
     description: 'Equipo frío/calor para empresas y hogares. Agua hirviendo para mate/café y helada al instante.',
     stockPlanta: 12,
-    stockCamion: 2
+    stockCamion: 2,
+    stockVaciosPlanta: 0,
+    stockVaciosCamion: 0
   }
 ];
 

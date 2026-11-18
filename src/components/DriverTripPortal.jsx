@@ -19,7 +19,8 @@ import {
   Plus,
   Trash2,
   ChevronDown,
-  Package
+  Package,
+  RotateCcw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { getStoredTrips, saveTrips } from '../services/tripSync';
@@ -44,10 +45,11 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
   const [driverMapType, setDriverMapType] = useState('google'); // 'google' | 'gps'
   const [selectedMapStop, setSelectedMapStop] = useState(null);
 
-  // Delivery modal with full multi-product breakdown
+  // Delivery modal with full multi-product breakdown & itemized empty containers
   const [activeStopModal, setActiveStopModal] = useState(null);
   const [deliveryItems, setDeliveryItems] = useState([]);
-  const [returnedEmpty, setReturnedEmpty] = useState(0);
+  const [returnedContainers, setReturnedContainers] = useState([]);
+  const [showAddContainerMenu, setShowAddContainerMenu] = useState(false);
   const [paymentType, setPaymentType] = useState('Efectivo');
   const [deliveryNotes, setDeliveryNotes] = useState('');
   const [showAddProductMenu, setShowAddProductMenu] = useState(false);
@@ -234,6 +236,12 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
     { name: 'Dispenser Natural Frío/Calor POLAR', price: 48000 }
   ];
 
+  const RETURNABLE_CONTAINER_CATALOG = [
+    { type: 'bidon20L', name: 'Bidón 20L Vacío' },
+    { type: 'sifon', name: 'Sifón Soda 1,5L Vacío' },
+    { type: 'bidon12L', name: 'Bidón 12L Vacío' }
+  ];
+
   const handleOpenDelivery = (stop) => {
     setActiveStopModal(stop);
     let items = [];
@@ -263,15 +271,39 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
 
     setDeliveryItems(cloned);
 
-    // Initial returned empty calculation: count all returnable containers ordered
-    const returnableCount = cloned.reduce((acc, it) => {
+    // Initial itemized empty containers: dynamically detect from items ordered (1:1 exchange)
+    const returnableMap = {};
+    cloned.forEach((it) => {
       const lower = (it.name || '').toLowerCase();
-      if (lower.includes('bid') || lower.includes('sif') || lower.includes('soda')) {
-        return acc + (Number(it.qty) || 0);
+      const q = Number(it.qty) || 0;
+      if (q <= 0) return;
+
+      if (lower.includes('12l') || (lower.includes('bid') && lower.includes('12'))) {
+        returnableMap['bidon12L'] = (returnableMap['bidon12L'] || 0) + q;
+      } else if (lower.includes('20l') || (lower.includes('bid') && !lower.includes('12'))) {
+        returnableMap['bidon20L'] = (returnableMap['bidon20L'] || 0) + q;
+      } else if (lower.includes('sif') || lower.includes('soda')) {
+        returnableMap['sifon'] = (returnableMap['sifon'] || 0) + q;
       }
-      return acc;
-    }, 0);
-    setReturnedEmpty(returnableCount > 0 ? returnableCount : 0);
+    });
+
+    const initialReturned = [];
+    if (returnableMap['bidon20L']) {
+      initialReturned.push({ type: 'bidon20L', name: 'Bidón 20L Vacío', qty: returnableMap['bidon20L'] });
+    }
+    if (returnableMap['sifon']) {
+      initialReturned.push({ type: 'sifon', name: 'Sifón Soda 1,5L Vacío', qty: returnableMap['sifon'] });
+    }
+    if (returnableMap['bidon12L']) {
+      initialReturned.push({ type: 'bidon12L', name: 'Bidón 12L Vacío', qty: returnableMap['bidon12L'] });
+    }
+
+    if (initialReturned.length === 0) {
+      initialReturned.push({ type: 'bidon20L', name: 'Bidón 20L Vacío', qty: 0 });
+    }
+
+    setReturnedContainers(initialReturned);
+    setShowAddContainerMenu(false);
 
     setPaymentType(stop.paymentMethod || 'Efectivo');
     setDeliveryNotes(stop.notes || '');
@@ -304,7 +336,34 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
     setShowAddProductMenu(false);
   };
 
+  const handleUpdateContainerQty = (index, delta) => {
+    setReturnedContainers(prev => {
+      const updated = [...prev];
+      const newQty = Math.max(0, (Number(updated[index].qty) || 0) + delta);
+      updated[index] = { ...updated[index], qty: newQty };
+      return updated;
+    });
+  };
+
+  const handleRemoveContainer = (index) => {
+    setReturnedContainers(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleAddReturnedContainer = (cont) => {
+    setReturnedContainers(prev => {
+      const existingIdx = prev.findIndex(c => c.type === cont.type);
+      if (existingIdx >= 0) {
+        const updated = [...prev];
+        updated[existingIdx] = { ...updated[existingIdx], qty: (Number(updated[existingIdx].qty) || 0) + 1 };
+        return updated;
+      }
+      return [...prev, { type: cont.type, name: cont.name, qty: 1 }];
+    });
+    setShowAddContainerMenu(false);
+  };
+
   const calculatedTotal = deliveryItems.reduce((acc, it) => acc + ((Number(it.qty) || 0) * (Number(it.price) || 0)), 0);
+  const totalReturnedEmpty = returnedContainers.reduce((acc, c) => acc + (Number(c.qty) || 0), 0);
 
   const handleConfirmDelivery = async () => {
     if (!activeStopModal || !currentTrip) return;
@@ -315,13 +374,16 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
 
     const deliveredTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const finalItems = deliveryItems.filter(it => (Number(it.qty) || 0) > 0);
+    const activeReturnedContainers = returnedContainers.filter(c => (Number(c.qty) || 0) > 0);
+    const totalReturnedCount = activeReturnedContainers.reduce((sum, c) => sum + (Number(c.qty) || 0), 0);
 
     // 1. API update
     await updateStopStatus(activeStopModal.id, {
       tripId: currentTrip.id,
       status: 'entregado',
       deliveredAt: deliveredTime,
-      returnedEmpty,
+      returnedEmpty: totalReturnedCount,
+      returnedContainers: activeReturnedContainers,
       paymentMethod: paymentType,
       items: finalItems,
       total: calculatedTotal,
@@ -341,8 +403,10 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
           status: 'entregado',
           deliveredAt: deliveredTime,
           delivered_at: deliveredTime,
-          returnedEmpty,
-          returned_empty: returnedEmpty,
+          returnedEmpty: totalReturnedCount,
+          returned_empty: totalReturnedCount,
+          returnedContainers: activeReturnedContainers,
+          returned_containers: activeReturnedContainers,
           paymentMethod: paymentType,
           payment_method: paymentType,
           items: finalItems,
@@ -370,14 +434,66 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
           if (paymentType === 'Fiado') {
             clients[cliIdx].balance = (Number(clients[cliIdx].balance) || 0) - calculatedTotal;
           }
-          const bidonesDelivered = finalItems.filter(i => (i.name || '').toLowerCase().includes('bid')).reduce((sum, i) => sum + (Number(i.qty) || 0), 0);
-          const sifonesDelivered = finalItems.filter(i => (i.name || '').toLowerCase().includes('sif')).reduce((sum, i) => sum + (Number(i.qty) || 0), 0);
+
+          // Count delivered per container type
+          const del20 = finalItems.filter(i => {
+            const n = (i.name || '').toLowerCase();
+            return n.includes('20') || (n.includes('bid') && !n.includes('12'));
+          }).reduce((sum, i) => sum + (Number(i.qty) || 0), 0);
+
+          const del12 = finalItems.filter(i => {
+            const n = (i.name || '').toLowerCase();
+            return n.includes('12');
+          }).reduce((sum, i) => sum + (Number(i.qty) || 0), 0);
+
+          const delSif = finalItems.filter(i => {
+            const n = (i.name || '').toLowerCase();
+            return n.includes('sif') || n.includes('soda');
+          }).reduce((sum, i) => sum + (Number(i.qty) || 0), 0);
+
+          // Count returned empty per container type
+          const ret20 = activeReturnedContainers.filter(c => {
+            const t = (c.type || c.name || '').toLowerCase();
+            return t.includes('20') || (t.includes('bid') && !t.includes('12'));
+          }).reduce((sum, c) => sum + (Number(c.qty) || 0), 0);
+
+          const ret12 = activeReturnedContainers.filter(c => {
+            const t = (c.type || c.name || '').toLowerCase();
+            return t.includes('12');
+          }).reduce((sum, c) => sum + (Number(c.qty) || 0), 0);
+
+          const retSif = activeReturnedContainers.filter(c => {
+            const t = (c.type || c.name || '').toLowerCase();
+            return t.includes('sif') || t.includes('soda');
+          }).reduce((sum, c) => sum + (Number(c.qty) || 0), 0);
+
           const currentHeld = clients[cliIdx].containersHeld || { bidon20L: 0, bidon12L: 0, sifon: 0 };
-          clients[cliIdx].containersHeld = {
-            ...currentHeld,
-            bidon20L: Math.max(0, (currentHeld.bidon20L || 0) + bidonesDelivered - returnedEmpty),
-            sifon: Math.max(0, (currentHeld.sifon || 0) + sifonesDelivered)
+          const updatedHeld = {
+            bidon20L: Math.max(0, (Number(currentHeld.bidon20L) || 0) + del20 - ret20),
+            bidon12L: Math.max(0, (Number(currentHeld.bidon12L) || 0) + del12 - ret12),
+            sifon: Math.max(0, (Number(currentHeld.sifon) || 0) + delSif - retSif)
           };
+
+          clients[cliIdx].containersHeld = updatedHeld;
+          clients[cliIdx].containers = [
+            { label: 'Bidón 20L', qty: updatedHeld.bidon20L },
+            { label: 'Bidón 12L', qty: updatedHeld.bidon12L },
+            { label: 'Sifón Soda 1.5L', qty: updatedHeld.sifon }
+          ].filter(c => c.qty > 0);
+
+          // Add to client delivery history
+          const deliveryRecord = {
+            id: `del-${Date.now()}`,
+            date: new Date().toLocaleDateString('es-AR') + ' ' + deliveredTime,
+            tripNumber: currentTrip.tripNumber,
+            itemsDelivered: finalItems.map(it => ({ name: it.name, qty: it.qty, price: it.price })),
+            returnedContainers: activeReturnedContainers.map(c => ({ name: c.name, type: c.type, qty: c.qty })),
+            totalEmpty: totalReturnedCount,
+            totalAmount: calculatedTotal,
+            paymentMethod: paymentType
+          };
+
+          clients[cliIdx].deliveryHistory = [deliveryRecord, ...(clients[cliIdx].deliveryHistory || [])];
           localStorage.setItem('polar_clients_v2', JSON.stringify(clients));
         }
       }
@@ -973,35 +1089,107 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
               </div>
             </div>
 
-            {/* Envases Vacíos Retirados */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-bold text-gray-700">Envases Vacíos Retirados:</span>
-                <span className="text-[10px] text-sky-800 font-semibold bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
-                  Esperados: {deliveryItems.reduce((acc, it) => {
-                    const l = (it.name || '').toLowerCase();
-                    return (l.includes('bid') || l.includes('sif') || l.includes('soda')) ? acc + (Number(it.qty) || 0) : acc;
-                  }, 0)} vacíos
+            {/* Envases Vacíos Retirados (Desglose individual por tipo de envase/producto) */}
+            <div className="space-y-2 pt-2 border-t border-gray-100">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-xs font-bold text-gray-800">
+                  <RotateCcw className="w-4 h-4 text-[#0c315b]" />
+                  <span>Envases Vacíos Retirados:</span>
+                </span>
+                <span className="text-[10px] text-sky-800 font-bold bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
+                  Total vacíos: {totalReturnedEmpty}
                 </span>
               </div>
-              <div className="flex items-center space-x-3 bg-sky-50/60 p-2 rounded-xl border border-sky-200">
-                <button 
-                  type="button"
-                  onClick={() => setReturnedEmpty(Math.max(0, returnedEmpty - 1))} 
-                  className="w-8 h-8 rounded-lg bg-white border border-sky-300 font-bold text-gray-700 hover:bg-sky-100 flex items-center justify-center transition active:scale-95 shadow-2xs"
-                >
-                  -
-                </button>
-                <span className="font-black text-sm flex-1 text-center text-[#0c315b]">
-                  {returnedEmpty}x Vacíos Retirados
-                </span>
-                <button 
-                  type="button"
-                  onClick={() => setReturnedEmpty(returnedEmpty + 1)} 
-                  className="w-8 h-8 rounded-lg bg-[#0c315b] text-white font-bold hover:bg-[#082342] flex items-center justify-center transition active:scale-95 shadow-2xs"
-                >
-                  +
-                </button>
+
+              <div className="space-y-1.5">
+                {returnedContainers.map((cont, cIdx) => (
+                  <div 
+                    key={cIdx}
+                    className="flex items-center justify-between bg-sky-50/60 hover:bg-sky-50 p-2.5 rounded-xl border border-sky-200 gap-2 transition"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="font-bold text-xs text-gray-900 block truncate">
+                        {cont.name}
+                      </span>
+                      <span className="text-[10px] text-sky-700 font-medium">
+                        Envase retornable
+                      </span>
+                    </div>
+
+                    {/* Stepper */}
+                    <div className="flex items-center space-x-1.5 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateContainerQty(cIdx, -1)}
+                        className="w-7 h-7 rounded-lg bg-white border border-sky-300 font-bold text-gray-700 hover:bg-sky-100 flex items-center justify-center transition active:scale-95 text-xs shadow-2xs"
+                      >
+                        -
+                      </button>
+                      <span className="w-8 text-center font-black text-xs text-[#0c315b]">
+                        {cont.qty}x
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateContainerQty(cIdx, 1)}
+                        className="w-7 h-7 rounded-lg bg-[#0c315b] text-white font-bold hover:bg-[#082342] flex items-center justify-center transition active:scale-95 text-xs shadow-2xs"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {/* Remove button if 0 and multiple */}
+                    {cont.qty === 0 && returnedContainers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveContainer(cIdx)}
+                        className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded"
+                        title="Quitar este envase"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Add Extra Empty Container Type */}
+              <div className="pt-0.5">
+                {!showAddContainerMenu ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddContainerMenu(true)}
+                    className="text-[11px] font-bold text-[#0c315b] hover:text-sky-700 flex items-center gap-1 transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Agregar otro tipo de envase vacío retirado</span>
+                  </button>
+                ) : (
+                  <div className="p-2.5 bg-sky-100/70 border border-sky-300 rounded-xl space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-[#0c315b]">
+                      <span>Elegí el envase vacío a incorporar:</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddContainerMenu(false)}
+                        className="text-gray-400 hover:text-gray-700 text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                      {RETURNABLE_CONTAINER_CATALOG.map((rc, rcIdx) => (
+                        <button
+                          key={rcIdx}
+                          type="button"
+                          onClick={() => handleAddReturnedContainer(rc)}
+                          className="text-left p-2 rounded-lg bg-white border border-sky-200 hover:border-[#0c315b] hover:bg-sky-50 text-xs font-semibold text-gray-800 transition flex items-center justify-between"
+                        >
+                          <span className="truncate mr-1">{rc.name}</span>
+                          <Plus className="w-3 h-3 text-[#0c315b] flex-shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

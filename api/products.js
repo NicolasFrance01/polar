@@ -4,6 +4,8 @@ let schemaEnsured = false;
 async function ensureProductColumns() {
   if (schemaEnsured) return;
   await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';`);
+  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_vacios_planta INT DEFAULT 0;`);
+  await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_vacios_camion INT DEFAULT 0;`);
   schemaEnsured = true;
 }
 
@@ -26,6 +28,10 @@ function mapProductRow(row) {
     stock_planta: row.stock_planta ?? 0,
     stockCamion: row.stock_camion ?? 0,
     stock_camion: row.stock_camion ?? 0,
+    stockVaciosPlanta: row.stock_vacios_planta ?? 0,
+    stock_vacios_planta: row.stock_vacios_planta ?? 0,
+    stockVaciosCamion: row.stock_vacios_camion ?? 0,
+    stock_vacios_camion: row.stock_vacios_camion ?? 0,
     subscriptionPlan: row.subscription_plan || '',
     subscription_plan: row.subscription_plan || '',
     active: row.active,
@@ -43,6 +49,7 @@ export default async function handler(req, res) {
       const result = await query(`
         SELECT id, name, category, size, description, price::float, pack_price::float, cost::float, 
                returnable, container_type, image, stock_planta, stock_camion, 
+               stock_vacios_planta, stock_vacios_camion,
                subscription_plan, active, created_at
         FROM products 
         WHERE active = true 
@@ -57,9 +64,10 @@ export default async function handler(req, res) {
       const result = await query(`
         INSERT INTO products (
           id, name, category, size, description, price, pack_price, cost, 
-          returnable, container_type, image, stock_planta, stock_camion, subscription_plan
+          returnable, container_type, image, stock_planta, stock_camion,
+          stock_vacios_planta, stock_vacios_camion, subscription_plan
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         RETURNING *
       `, [
         prodId,
@@ -75,6 +83,8 @@ export default async function handler(req, res) {
         b.image || '/images/bidon-20l.png',
         Number(b.stockPlanta ?? b.stock_planta ?? 0),
         Number(b.stockCamion ?? b.stock_camion ?? 0),
+        Number(b.stockVaciosPlanta ?? b.stock_vacios_planta ?? 0),
+        Number(b.stockVaciosCamion ?? b.stock_vacios_camion ?? 0),
         b.subscriptionPlan ?? b.subscription_plan ?? null
       ]);
 
@@ -104,8 +114,10 @@ export default async function handler(req, res) {
             image = COALESCE($10, image),
             stock_planta = COALESCE($11, stock_planta),
             stock_camion = COALESCE($12, stock_camion),
-            subscription_plan = COALESCE($13, subscription_plan)
-        WHERE id = $14
+            stock_vacios_planta = COALESCE($13, stock_vacios_planta),
+            stock_vacios_camion = COALESCE($14, stock_vacios_camion),
+            subscription_plan = COALESCE($15, subscription_plan)
+        WHERE id = $16
         RETURNING *
       `, [
         b.name ?? null,
@@ -120,6 +132,8 @@ export default async function handler(req, res) {
         b.image ?? null,
         (b.stockPlanta ?? b.stock_planta) !== undefined ? Number(b.stockPlanta ?? b.stock_planta) : null,
         (b.stockCamion ?? b.stock_camion) !== undefined ? Number(b.stockCamion ?? b.stock_camion) : null,
+        (b.stockVaciosPlanta ?? b.stock_vacios_planta) !== undefined ? Number(b.stockVaciosPlanta ?? b.stock_vacios_planta) : null,
+        (b.stockVaciosCamion ?? b.stock_vacios_camion) !== undefined ? Number(b.stockVaciosCamion ?? b.stock_vacios_camion) : null,
         b.subscriptionPlan ?? b.subscription_plan ?? null,
         targetId
       ]);

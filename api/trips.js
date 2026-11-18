@@ -6,6 +6,7 @@ async function ensureTripColumns() {
   await query(`ALTER TABLE trips ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;`);
   await query(`ALTER TABLE trips ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';`);
   await query(`ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS skip_reason TEXT DEFAULT '';`);
+  await query(`ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS returned_containers JSONB DEFAULT '[]'::jsonb;`);
   schemaEnsured = true;
 }
 
@@ -38,7 +39,7 @@ export default async function handler(req, res) {
       let stopsSql = `
         SELECT id, trip_id, order_number, order_ref, client_id, client_name, address, 
                phone, lat, lng, items, total::float, status, is_next, delivered_at, 
-               payment_method, returned_empty, notes, skip_reason, created_at
+               payment_method, returned_empty, returned_containers, notes, skip_reason, created_at
         FROM trip_stops
       `;
       const stopParams = [];
@@ -71,6 +72,7 @@ export default async function handler(req, res) {
           deliveredAt: stop.delivered_at,
           paymentMethod: stop.payment_method,
           returnedEmpty: stop.returned_empty,
+          returnedContainers: stop.returned_containers || [],
           notes: stop.notes,
           skipReason: stop.skip_reason || ''
         });
@@ -123,6 +125,7 @@ export default async function handler(req, res) {
           deliveredAt,
           paymentMethod,
           returnedEmpty,
+          returnedContainers,
           items,
           total,
           isNext,
@@ -135,6 +138,7 @@ export default async function handler(req, res) {
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const itemsJson = items ? JSON.stringify(items) : null;
         const totalNum = total != null ? Number(total) : null;
+        const returnedContainersJson = returnedContainers ? JSON.stringify(returnedContainers) : null;
 
         const result = await query(`
           UPDATE trip_stops
@@ -146,8 +150,9 @@ export default async function handler(req, res) {
               notes = COALESCE($6, notes),
               skip_reason = COALESCE($7, skip_reason),
               items = COALESCE($8, items),
-              total = COALESCE($9, total)
-          WHERE id = $10
+              total = COALESCE($9, total),
+              returned_containers = COALESCE($10, returned_containers)
+          WHERE id = $11
           RETURNING *
         `, [
           status ?? null,
@@ -159,6 +164,7 @@ export default async function handler(req, res) {
           skipReason ?? null,
           itemsJson,
           totalNum,
+          returnedContainersJson,
           stopId
         ]);
 
@@ -194,6 +200,86 @@ export default async function handler(req, res) {
         // If paid with Fiado, update client's fiado balance
         if (paymentMethod === 'Fiado' && updatedStop?.client_id && totalNum > 0) {
           await query(`UPDATE clients SET fiado_balance = fiado_balance + $1 WHERE id = $2`, [totalNum, updatedStop.client_id]).catch(() => { });
+        }
+
+        // When delivered, sync containers held & delivery history on the client
+        if (status === 'entregado' && updatedStop?.client_id) {
+          try {
+            const clientRes = await query(`SELECT id, containers_held, delivery_history FROM clients WHERE id = $1`, [updatedStop.client_id]);
+            if (clientRes.rows.length > 0) {
+              const cli = clientRes.rows[0];
+              let held = cli.containers_held || { bidon20L: 0, bidon12L: 0, sifon: 0 };
+              if (typeof held === 'string') {
+                try { held = JSON.parse(held); } catch { held = { bidon20L: 0, bidon12L: 0, sifon: 0 }; }
+              }
+              let history = cli.delivery_history || [];
+              if (typeof history === 'string') {
+                try { history = JSON.parse(history); } catch { history = []; }
+              }
+              if (!Array.isArray(history)) history = [];
+
+              const parsedItems = Array.isArray(items) ? items : [];
+              let del20 = 0, del12 = 0, delSif = 0;
+              parsedItems.forEach(it => {
+                const n = (it.name || '').toLowerCase();
+                const q = Number(it.qty) || 0;
+                if (n.includes('20')) del20 += q;
+                else if (n.includes('12')) del12 += q;
+                else if (n.includes('sif') || n.includes('soda')) delSif += q;
+              });
+
+              const parsedReturned = Array.isArray(returnedContainers) ? returnedContainers : [];
+              let ret20 = 0, ret12 = 0, retSif = 0;
+              parsedReturned.forEach(rc => {
+                const n = (rc.name || rc.type || '').toLowerCase();
+                const q = Number(rc.qty) || 0;
+                if (n.includes('20')) ret20 += q;
+                else if (n.includes('12')) ret12 += q;
+                else if (n.includes('sif') || n.includes('soda')) retSif += q;
+              });
+
+              held.bidon20L = Math.max(0, (Number(held.bidon20L) || 0) + del20 - ret20);
+              held.bidon12L = Math.max(0, (Number(held.bidon12L) || 0) + del12 - ret12);
+              held.sifon = Math.max(0, (Number(held.sifon) || 0) + delSif - retSif);
+
+              const deliveryEntry = {
+                id: `del-${Date.now()}`,
+                date: new Date().toLocaleDateString('es-AR') + ' ' + (deliveredAt || timeStr),
+                tripId: targetTripId,
+                itemsDelivered: parsedItems,
+                returnedContainers: parsedReturned,
+                totalEmpty: returnedEmpty || 0,
+                totalPaid: totalNum || 0,
+                paymentMethod: paymentMethod || 'Efectivo'
+              };
+
+              history.unshift(deliveryEntry);
+
+              await query(
+                `UPDATE clients SET containers_held = $1, delivery_history = $2 WHERE id = $3`,
+                [JSON.stringify(held), JSON.stringify(history), updatedStop.client_id]
+              ).catch(() => {});
+            }
+          } catch (err) {
+            console.warn('Postgres client sync error in trip_stops:', err);
+          }
+
+          // Increment empty containers stock on truck in products table
+          if (Array.isArray(returnedContainers)) {
+            for (const rc of returnedContainers) {
+              const q = Number(rc.qty) || 0;
+              if (q > 0) {
+                const n = (rc.name || rc.type || '').toLowerCase();
+                let pattern = '%20%';
+                if (n.includes('12')) pattern = '%12%';
+                else if (n.includes('sif') || n.includes('soda')) pattern = '%sif%';
+                await query(
+                  `UPDATE products SET stock_vacios_camion = COALESCE(stock_vacios_camion, 0) + $1 WHERE name ILIKE $2 OR container_type ILIKE $2`,
+                  [q, pattern]
+                ).catch(() => {});
+              }
+            }
+          }
         }
 
         // Also update driver GPS coordinates & last_update on trips if provided

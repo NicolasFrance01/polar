@@ -210,6 +210,7 @@ export default function Clientes() {
               { label: 'Bidón 12L', qty: c.containers_held?.bidon12L || 0 },
               { label: 'Sifón', qty: c.containers_held?.sifon || 0 }
             ].filter(x => x.qty > 0),
+            deliveryHistory: c.delivery_history || [],
             isInactive: false,
             notes: c.notes || ''
           }));
@@ -604,28 +605,84 @@ export default function Clientes() {
                 </div>
 
                 {isExpanded && (
-                  <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs bg-gray-50 p-3 rounded-lg">
-                    <div>
-                      <span className="text-gray-400 block text-[10px] uppercase font-bold">Dirección:</span>
-                      <strong className="text-gray-800">{client.address}</strong>
+                  <div className="mt-3 pt-3 border-t border-gray-100 space-y-3 bg-gray-50 p-3.5 rounded-xl text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div>
+                        <span className="text-gray-400 block text-[10px] uppercase font-bold">Dirección:</span>
+                        <strong className="text-gray-800">{client.address}</strong>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block text-[10px] uppercase font-bold">Notas de entrega:</span>
+                        <span className="text-gray-700">{client.notes || 'Sin notas'}</span>
+                      </div>
+                      <div className="sm:text-right">
+                        <button
+                          onClick={() => {
+                            const msg = encodeURIComponent(
+                              `Hola ${client.name}! Te escribimos de Soda y Agua Polar. Podés hacer tu próximo pedido directo desde este link: ${getQrTargetUrl(client)}`
+                            );
+                            window.open(`https://wa.me/${client.phone}?text=${msg}`, '_blank');
+                          }}
+                          className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center space-x-1"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>Enviar Link /cliente</span>
+                        </button>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-gray-400 block text-[10px] uppercase font-bold">Notas de entrega:</span>
-                      <span className="text-gray-700">{client.notes || 'Sin notas'}</span>
+
+                    {/* Envases en posesión del cliente desglosados */}
+                    <div className="pt-2 border-t border-gray-200">
+                      <span className="text-gray-500 block text-[10px] uppercase font-bold mb-1.5">
+                        📦 Balance de Envases en Posesión del Cliente:
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="px-2.5 py-1 rounded-lg bg-sky-100/70 border border-sky-300 font-bold text-[#0c315b] text-xs">
+                          Bidones 20L: {client.containersHeld?.bidon20L || 0}
+                        </span>
+                        <span className="px-2.5 py-1 rounded-lg bg-sky-100/70 border border-sky-300 font-bold text-[#0c315b] text-xs">
+                          Bidones 12L: {client.containersHeld?.bidon12L || 0}
+                        </span>
+                        <span className="px-2.5 py-1 rounded-lg bg-sky-100/70 border border-sky-300 font-bold text-[#0c315b] text-xs">
+                          Sifones Soda 1.5L: {client.containersHeld?.sifon || 0}
+                        </span>
+                      </div>
                     </div>
-                    <div className="sm:text-right">
-                      <button
-                        onClick={() => {
-                          const msg = encodeURIComponent(
-                            `Hola ${client.name}! Te escribimos de Soda y Agua Polar. Podés hacer tu próximo pedido directo desde este link: ${getQrTargetUrl(client)}`
-                          );
-                          window.open(`https://wa.me/${client.phone}?text=${msg}`, '_blank');
-                        }}
-                        className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center space-x-1"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5" />
-                        <span>Enviar Link /cliente</span>
-                      </button>
+
+                    {/* Historial de Entregas y Devolución de Envases */}
+                    <div className="pt-2 border-t border-gray-200">
+                      <span className="text-gray-500 block text-[10px] uppercase font-bold mb-1.5">
+                        📋 Historial de Entregas y Devolución de Envases:
+                      </span>
+                      {client.deliveryHistory && client.deliveryHistory.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {client.deliveryHistory.slice(0, 5).map((del, dIdx) => (
+                            <div key={dIdx} className="bg-white p-2.5 rounded-lg border border-gray-200 shadow-2xs space-y-1">
+                              <div className="flex justify-between items-center text-[11px] font-bold">
+                                <span className="text-[#0c315b]">📅 {del.date} {del.tripNumber ? `(Ruta #${del.tripNumber})` : ''}</span>
+                                <span className="text-emerald-700 font-mono">${Number(del.totalAmount || del.totalPaid || 0).toLocaleString('es-AR')} ({del.paymentMethod || 'Efectivo'})</span>
+                              </div>
+                              <div className="text-[11px] text-gray-700 flex flex-wrap items-center gap-x-2">
+                                <span className="font-semibold text-gray-900">Entregado:</span>
+                                <span>{(del.itemsDelivered || []).map(i => `${i.qty}x ${i.name}`).join(', ') || 'Productos Polar'}</span>
+                              </div>
+                              <div className="text-[11px] text-sky-800 flex flex-wrap items-center gap-x-2">
+                                <span className="font-semibold text-[#0c315b]">Vacíos retirados:</span>
+                                <span>
+                                  {(del.returnedContainers && del.returnedContainers.length > 0)
+                                    ? del.returnedContainers.map(c => `${c.qty}x ${c.name}`).join(', ')
+                                    : del.totalEmpty ? `${del.totalEmpty} vacíos` : 'Ninguno (0)'
+                                  }
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-gray-400 italic text-[11px]">
+                          Sin entregas registradas aún. Al confirmar entregas desde la Hoja de Ruta, aparecerán aquí con el detalle de productos y envases vacíos devueltos.
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
