@@ -15,8 +15,8 @@ import {
   ExternalLink,
   Radio
 } from 'lucide-react';
-import { getStoredTrips, subscribeToTripUpdates } from '../services/tripSync';
-import { fetchTrips } from '../services/api';
+import { getStoredTrips, subscribeToTripUpdates, deleteStoredTrip } from '../services/tripSync';
+import { fetchTrips, deleteTrip } from '../services/api';
 import { 
   getGoogleMapsRouteEmbedUrl, 
   getGoogleMapsDirectionsAppUrl, 
@@ -58,6 +58,24 @@ export default function Repartos({ onOpenDriverTrip }) {
         setLiveToast(`🚚 GPS y estado actualizados (${target.driverName})`);
         setTimeout(() => setLiveToast(null), 3500);
       }
+    } else {
+      setTripsData({});
+      setSelectedTruckId('');
+    }
+  };
+
+  const handleDeleteTrip = async (trip) => {
+    if (!window.confirm(`¿Estás seguro de que deseás eliminar la Hoja de Ruta #${trip.tripNumber} (${trip.driverName})?\n\nLos pedidos que contenía volverán a quedar disponibles para repartir.`)) {
+      return;
+    }
+    try {
+      await deleteTrip(trip.id);
+      deleteStoredTrip(trip.id);
+      setLiveToast(`Hoja de Ruta #${trip.tripNumber} eliminada correctamente`);
+      setTimeout(() => setLiveToast(null), 3500);
+      await syncFromDatabase();
+    } catch (err) {
+      alert('Error al eliminar la hoja de ruta: ' + err.message);
     }
   };
 
@@ -317,11 +335,24 @@ export default function Repartos({ onOpenDriverTrip }) {
                         <Truck className="w-4 h-4 text-[#0c315b]" />
                         <span className="font-extrabold text-sm text-gray-900">Hoja de Ruta #{trip.tripNumber}</span>
                       </div>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        isFinished ? 'bg-emerald-100 text-emerald-800' : 'bg-[#0c315b] text-white'
-                      }`}>
-                        {isFinished ? 'Finalizada' : 'En progreso'}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          isFinished ? 'bg-emerald-100 text-emerald-800' : 'bg-[#0c315b] text-white'
+                        }`}>
+                          {isFinished ? 'Finalizada' : 'En progreso'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteTrip(trip);
+                          }}
+                          className="p-1 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                          title="Eliminar esta hoja de ruta"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     <p className="text-xs font-semibold text-gray-800">{trip.driverName}</p>
@@ -385,6 +416,18 @@ export default function Repartos({ onOpenDriverTrip }) {
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
                       <span>Abrir</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteTrip(trip);
+                      }}
+                      className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                      title="Eliminar hoja de ruta"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>

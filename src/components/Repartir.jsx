@@ -28,9 +28,10 @@ import {
   fetchOrders,
   fetchTrips,
   fetchUsers,
-  createTrip
+  createTrip,
+  deleteTrip
 } from '../services/api';
-import { getStoredOrders } from '../services/tripSync';
+import { getStoredOrders, deleteStoredTrip } from '../services/tripSync';
 import { 
   getGoogleMapsRouteEmbedUrl, 
   getGoogleMapsDirectionsAppUrl, 
@@ -247,6 +248,19 @@ export default function Repartir({ onOpenDriverTrip }) {
       `🔗 ${url}`
     );
     window.open(`https://wa.me/${dPhone}?text=${text}`, '_blank');
+  };
+
+  const handleDeleteTripFromHistory = async (trip) => {
+    if (!window.confirm(`¿Estás seguro de que deseás eliminar la Hoja de Ruta #${trip.tripNumber} del historial?\n\nLos pedidos incluidos volverán a quedar disponibles en la lista de pedidos.`)) {
+      return;
+    }
+    try {
+      await deleteTrip(trip.id);
+      deleteStoredTrip(trip.id);
+      await loadAllData();
+    } catch (err) {
+      alert('Error al eliminar la hoja de ruta: ' + err.message);
+    }
   };
 
   // Filter available orders with search input
@@ -796,6 +810,14 @@ export default function Repartir({ onOpenDriverTrip }) {
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span>Abrir</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteTripFromHistory(trip)}
+                        className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 transition"
+                        title="Eliminar hoja de ruta del historial"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
 
                       <button

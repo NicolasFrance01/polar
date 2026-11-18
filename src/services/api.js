@@ -276,6 +276,20 @@ export async function addStopToTrip(tripId, stop) {
   }
 }
 
+export async function deleteTrip(tripId) {
+  try {
+    const res = await fetch(`${API_BASE}/trips?id=${encodeURIComponent(tripId)}`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al eliminar la hoja de ruta');
+    return data;
+  } catch (err) {
+    console.warn('API deleteTrip error:', err);
+    throw err;
+  }
+}
+
 // ===================== ORDERS =====================
 export async function fetchOrders() {
   try {

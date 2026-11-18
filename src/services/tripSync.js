@@ -35,6 +35,37 @@ export function saveTrips(tripsData) {
   } catch (e) { }
 }
 
+// Delete trip from localStorage and release any assigned orders
+export function deleteStoredTrip(tripId) {
+  try {
+    const current = getStoredTrips();
+    if (current && current[tripId]) {
+      delete current[tripId];
+      saveTrips(current);
+    }
+    const storedOrders = getStoredOrders();
+    let ordersChanged = false;
+    const updatedOrders = storedOrders.map((o) => {
+      if (o.tripId === tripId || o.trip_id === tripId) {
+        ordersChanged = true;
+        return {
+          ...o,
+          tripId: null,
+          trip_id: null,
+          status: (o.status === 'Aprobado y en hoja de ruta' || o.status === 'ruta') ? 'Pendiente de aprobación' : o.status
+        };
+      }
+      return o;
+    });
+    if (ordersChanged) {
+      localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(updatedOrders));
+    }
+    return current;
+  } catch (e) {
+    return {};
+  }
+}
+
 // Subscribe to real-time updates
 export function subscribeToTripUpdates(callback) {
   let channel = null;

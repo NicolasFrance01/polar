@@ -174,9 +174,9 @@ export default async function handler(req, res) {
 
         // Sync order status if linked via order_ref
         if (updatedStop?.order_ref && status === 'entregado') {
-          await query(`UPDATE orders SET status = 'Entregado' WHERE id = $1`, [updatedStop.order_ref]).catch(() => {});
+          await query(`UPDATE orders SET status = 'Entregado' WHERE id = $1`, [updatedStop.order_ref]).catch(() => { });
         } else if (updatedStop?.order_ref && status === 'cancelado') {
-          await query(`UPDATE orders SET status = 'Cancelado' WHERE id = $1`, [updatedStop.order_ref]).catch(() => {});
+          await query(`UPDATE orders SET status = 'Cancelado' WHERE id = $1`, [updatedStop.order_ref]).catch(() => { });
         }
 
         // Also update driver GPS coordinates & last_update on trips if provided
@@ -310,7 +310,7 @@ export default async function handler(req, res) {
             await query(
               `UPDATE orders SET status = 'Aprobado y en hoja de ruta', trip_id = $1 WHERE id = $2`,
               [tripId, ordId]
-            ).catch(() => {});
+            ).catch(() => { });
           }
         }
 
@@ -335,7 +335,45 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true });
       }
 
+      // 7. Delete trip
+      if (action === 'delete_trip') {
+        const { tripId } = req.body;
+        if (!tripId) return res.status(400).json({ error: 'Falta el id de la hoja de ruta' });
+
+        // Release assigned orders back to available
+        await query(`
+          UPDATE orders 
+          SET trip_id = NULL, 
+              status = CASE WHEN status = 'Aprobado y en hoja de ruta' THEN 'Pendiente de aprobación' ELSE status END
+          WHERE trip_id = $1
+        `, [tripId]).catch(() => {});
+
+        await query(`DELETE FROM trip_stops WHERE trip_id = $1`, [tripId]);
+        await query(`DELETE FROM trips WHERE id = $1`, [tripId]);
+
+        return res.status(200).json({ success: true, deletedTripId: tripId });
+      }
+
       return res.status(400).json({ error: 'Unknown action' });
+    }
+
+    if (method === 'DELETE') {
+      const { id, tripId } = req.query || {};
+      const targetId = id || tripId;
+      if (!targetId) return res.status(400).json({ error: 'Falta el id de la hoja de ruta' });
+
+      // Release assigned orders back to available
+      await query(`
+        UPDATE orders 
+        SET trip_id = NULL, 
+            status = CASE WHEN status = 'Aprobado y en hoja de ruta' THEN 'Pendiente de aprobación' ELSE status END
+        WHERE trip_id = $1
+      `, [targetId]).catch(() => {});
+
+      await query(`DELETE FROM trip_stops WHERE trip_id = $1`, [targetId]);
+      await query(`DELETE FROM trips WHERE id = $1`, [targetId]);
+
+      return res.status(200).json({ success: true, deletedTripId: targetId });
     }
 
     return res.status(405).json({ error: `Method ${method} not allowed` });
