@@ -542,7 +542,7 @@ export default function Repartir({ onOpenDriverTrip }) {
   };
 
   // Filter available orders with search input
-  const filteredAvailableOrders = orders.filter((o) => {
+  const filteredAvailableOrders = (orders || []).filter((o) => {
     if (!availableSearch.trim()) return true;
     const term = availableSearch.toLowerCase();
     return (
@@ -554,7 +554,19 @@ export default function Repartir({ onOpenDriverTrip }) {
     );
   });
 
-  const filteredHistory = tripsHistory.filter((t) => {
+  // Filter clients with search input
+  const filteredClients = (clients || []).filter((c) => {
+    if (!clientSearch.trim()) return true;
+    const term = clientSearch.toLowerCase();
+    return (
+      (c.name && c.name.toLowerCase().includes(term)) ||
+      (c.address && c.address.toLowerCase().includes(term)) ||
+      (c.neighborhood && c.neighborhood.toLowerCase().includes(term)) ||
+      (c.phone && c.phone.toLowerCase().includes(term))
+    );
+  });
+
+  const filteredHistory = (tripsHistory || []).filter((t) => {
     if (historyFilter === 'todos') return true;
     return t.status === historyFilter;
   });
