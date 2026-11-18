@@ -17,9 +17,143 @@ import {
   MessageCircle,
   Copy,
   Check,
-  ExternalLink
+  ExternalLink,
+  RotateCw
 } from 'lucide-react';
 import { fetchClients, createClient, updateClient, deleteClient } from '../services/api';
+
+const CLIENTS_STORAGE_KEY = 'polar_clients_v2';
+const DELETED_CLIENTS_KEY = 'polar_deleted_clients_ids_v2';
+
+const INITIAL_CLIENTS_SEED = [
+  {
+    id: 'cli-01',
+    name: 'Norma Giménez',
+    phone: '5491155550106',
+    addressRaw: 'Loyola 420',
+    neighborhood: 'Villa Crespo',
+    address: 'Loyola 420, Villa Crespo',
+    balance: -40500.00,
+    containersHeld: { bidon20L: 8, bidon12L: 0, sifon: 0 },
+    containers: [{ label: 'Bidón 20L', qty: 8 }],
+    isInactive: true,
+    notes: 'Dejar en portería si no atiende.'
+  },
+  {
+    id: 'cli-02',
+    name: 'Panadería La Espiga',
+    phone: '5491155550112',
+    addressRaw: 'Juan B. Justo 3420',
+    neighborhood: 'Palermo',
+    address: 'Juan B. Justo 3420, Palermo',
+    balance: -15300.00,
+    containersHeld: { bidon20L: 7, bidon12L: 0, sifon: 0 },
+    containers: [{ label: 'Bidón 20L', qty: 7 }],
+    isInactive: true,
+    notes: 'Entrada lateral sobre calle Vera.'
+  },
+  {
+    id: 'cli-03',
+    name: 'Graciela Sosa',
+    phone: '5491155550109',
+    addressRaw: 'Santa Rosa 890',
+    neighborhood: 'Alberdi',
+    address: 'Santa Rosa 890, Alberdi',
+    balance: -8200.00,
+    containersHeld: { bidon20L: 5, bidon12L: 0, sifon: 0 },
+    containers: [{ label: 'Bidón 20L', qty: 5 }],
+    isInactive: true,
+    notes: 'Pagar con transferencia.'
+  },
+  {
+    id: 'cli-04',
+    name: 'Silvia Peralta',
+    phone: '5491155550104',
+    addressRaw: 'Av. Colón 1240, Depto 3B',
+    neighborhood: 'Alberdi',
+    address: 'Av. Colón 1240, Depto 3B, Alberdi',
+    balance: -4800.00,
+    containersHeld: { bidon20L: 0, bidon12L: 3, sifon: 0 },
+    containers: [{ label: 'Bidón 12L', qty: 3 }],
+    isInactive: true,
+    notes: 'Timbre 3B.'
+  },
+  {
+    id: 'cli-05',
+    name: 'Familia Rodríguez',
+    phone: '5493512345678',
+    addressRaw: 'Camargo 460',
+    neighborhood: 'Villa Crespo',
+    address: 'Camargo 460, Villa Crespo',
+    balance: 0.00,
+    containersHeld: { bidon20L: 3, bidon12L: 0, sifon: 2 },
+    containers: [
+      { label: 'Bidón 20L', qty: 3 },
+      { label: 'Sifón Soda 1.5L', qty: 2 }
+    ],
+    isInactive: false,
+    notes: 'Recarga fija los días Lunes.'
+  },
+  {
+    id: 'cli-06',
+    name: 'Consultorio Dental Crespo',
+    phone: '5491155550103',
+    addressRaw: 'Corrientes 4800, Piso 2',
+    neighborhood: 'San Martín',
+    address: 'Corrientes 4800, Piso 2, San Martín',
+    balance: 0.00,
+    containersHeld: { bidon20L: 6, bidon12L: 0, sifon: 0 },
+    containers: [
+      { label: 'Bidón 20L', qty: 6 }
+    ],
+    isInactive: false,
+    notes: 'Atención 9 a 18hs.'
+  }
+];
+
+function getDeletedClientIds() {
+  try {
+    const raw = localStorage.getItem(DELETED_CLIENTS_KEY);
+    return raw ? new Set(JSON.parse(raw).map(String)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveDeletedClientId(id) {
+  try {
+    const ids = getDeletedClientIds();
+    ids.add(String(id));
+    localStorage.setItem(DELETED_CLIENTS_KEY, JSON.stringify(Array.from(ids)));
+  } catch (e) {
+    console.error('Error saving deleted client id:', e);
+  }
+}
+
+function getStoredClients() {
+  try {
+    const raw = localStorage.getItem(CLIENTS_STORAGE_KEY);
+    if (raw !== null) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const deletedIds = getDeletedClientIds();
+        return parsed.filter(c => !deletedIds.has(String(c.id)));
+      }
+    }
+  } catch (e) {
+    console.error('Error reading stored clients:', e);
+  }
+  const deletedIds = getDeletedClientIds();
+  return INITIAL_CLIENTS_SEED.filter(c => !deletedIds.has(String(c.id)));
+}
+
+function saveStoredClients(clients) {
+  try {
+    localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(clients));
+  } catch (e) {
+    console.error('Error saving stored clients:', e);
+  }
+}
 
 export default function Clientes() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,105 +187,76 @@ export default function Clientes() {
   const [newNeighborhood, setNewNeighborhood] = useState('Alberdi');
   const [newBidones, setNewBidones] = useState(2);
 
-  const initialSeed = [
-    {
-      id: 'cli-01',
-      name: 'Norma Giménez',
-      phone: '5491155550106',
-      address: 'Loyola 420, Villa Crespo',
-      balance: -40500.00,
-      containers: [{ label: 'Bidón 20L', qty: 8 }],
-      isInactive: true,
-      notes: 'Dejar en portería si no atiende.'
-    },
-    {
-      id: 'cli-02',
-      name: 'Panadería La Espiga',
-      phone: '5491155550112',
-      address: 'Juan B. Justo 3420, Palermo',
-      balance: -15300.00,
-      containers: [{ label: 'Bidón 20L', qty: 7 }],
-      isInactive: true,
-      notes: 'Entrada lateral sobre calle Vera.'
-    },
-    {
-      id: 'cli-03',
-      name: 'Graciela Sosa',
-      phone: '5491155550109',
-      address: 'Santa Rosa 890, Alberdi',
-      balance: -8200.00,
-      containers: [{ label: 'Bidón 20L', qty: 5 }],
-      isInactive: true,
-      notes: 'Pagar con transferencia.'
-    },
-    {
-      id: 'cli-04',
-      name: 'Silvia Peralta',
-      phone: '5491155550104',
-      address: 'Av. Colón 1240, Depto 3B',
-      balance: -4800.00,
-      containers: [{ label: 'Bidón 12L', qty: 3 }],
-      isInactive: true,
-      notes: 'Timbre 3B.'
-    },
-    {
-      id: 'cli-05',
-      name: 'Familia Rodríguez',
-      phone: '5493512345678',
-      address: 'Camargo 460, Villa Crespo',
-      balance: 0.00,
-      containers: [
-        { label: 'Bidón 20L', qty: 3 },
-        { label: 'Sifón Soda 1.5L', qty: 2 }
-      ],
-      isInactive: false,
-      notes: 'Recarga fija los días Lunes.'
-    },
-    {
-      id: 'cli-06',
-      name: 'Consultorio Dental Crespo',
-      phone: '5491155550103',
-      address: 'Corrientes 4800, Piso 2',
-      balance: 0.00,
-      containers: [
-        { label: 'Bidón 20L', qty: 6 },
-        { label: 'Dispenser F/C', qty: 2 }
-      ],
-      isInactive: false,
-      notes: 'Atención 9 a 18hs.'
-    }
-  ];
+  const [clientsList, setClientsList] = useState(() => getStoredClients());
 
-  const [clientsList, setClientsList] = useState(initialSeed);
+  const loadClients = async () => {
+    try {
+      const dbClients = await fetchClients();
+      if (Array.isArray(dbClients)) {
+        const deletedIds = getDeletedClientIds();
+        const validDb = dbClients
+          .filter(c => !deletedIds.has(String(c.id)))
+          .map(c => ({
+            id: c.id,
+            name: c.name,
+            phone: c.phone || '',
+            addressRaw: c.address || '',
+            neighborhood: c.neighborhood || '',
+            address: `${c.address}${c.neighborhood ? `, ${c.neighborhood}` : ''}`,
+            balance: -Math.abs(c.fiado_balance || 0),
+            containersHeld: c.containers_held || {},
+            containers: [
+              { label: 'Bidón 20L', qty: c.containers_held?.bidon20L || 0 },
+              { label: 'Bidón 12L', qty: c.containers_held?.bidon12L || 0 },
+              { label: 'Sifón', qty: c.containers_held?.sifon || 0 }
+            ].filter(x => x.qty > 0),
+            isInactive: false,
+            notes: c.notes || ''
+          }));
 
-  const loadClients = () => {
-    fetchClients().then(dbClients => {
-      if (Array.isArray(dbClients) && dbClients.length > 0) {
-        const formatted = dbClients.map(c => ({
-          id: c.id,
-          name: c.name,
-          phone: c.phone || '',
-          addressRaw: c.address || '',
-          neighborhood: c.neighborhood || '',
-          address: `${c.address}${c.neighborhood ? `, ${c.neighborhood}` : ''}`,
-          balance: -Math.abs(c.fiado_balance || 0),
-          containersHeld: c.containers_held || {},
-          containers: [
-            { label: 'Bidón 20L', qty: c.containers_held?.bidon20L || 0 },
-            { label: 'Bidón 12L', qty: c.containers_held?.bidon12L || 0 },
-            { label: 'Sifón', qty: c.containers_held?.sifon || 0 }
-          ].filter(x => x.qty > 0),
-          isInactive: false,
-          notes: c.notes || ''
-        }));
-        setClientsList(formatted);
+        if (validDb.length > 0) {
+          setClientsList(validDb);
+          saveStoredClients(validDb);
+        } else if (dbClients.length === 0) {
+          const stored = getStoredClients();
+          if (stored.length === 0) {
+            setClientsList([]);
+            saveStoredClients([]);
+          }
+        }
       }
-    });
+    } catch (err) {
+      console.warn('Using stored clients cache:', err.message);
+    }
   };
 
   useEffect(() => {
     loadClients();
   }, []);
+
+  const handleRestoreDemoClients = () => {
+    try {
+      localStorage.removeItem(DELETED_CLIENTS_KEY);
+      localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(INITIAL_CLIENTS_SEED));
+      setClientsList(INITIAL_CLIENTS_SEED);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleClearAllClients = () => {
+    if (clientsList.length === 0) return;
+    if (!window.confirm('¿Estás seguro de que deseás eliminar todos los clientes de la lista?')) return;
+    try {
+      const ids = getDeletedClientIds();
+      clientsList.forEach(c => ids.add(String(c.id)));
+      localStorage.setItem(DELETED_CLIENTS_KEY, JSON.stringify(Array.from(ids)));
+      localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify([]));
+      setClientsList([]);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const getQrTargetUrl = (client) => {
     if (!client || client.isGeneric) return `${window.location.origin}/cliente`;
@@ -182,21 +287,42 @@ export default function Clientes() {
 
   const handleAddClient = async (e) => {
     e.preventDefault();
+    const newId = `cli-${Date.now()}`;
+    const newClientObj = {
+      id: newId,
+      name: newName,
+      phone: newPhone,
+      addressRaw: newAddress,
+      neighborhood: newNeighborhood,
+      address: `${newAddress}${newNeighborhood ? `, ${newNeighborhood}` : ''}`,
+      balance: 0,
+      containersHeld: { bidon20L: Number(newBidones) || 0, bidon12L: 0, sifon: 0 },
+      containers: [{ label: 'Bidón 20L', qty: Number(newBidones) || 0 }].filter(x => x.qty > 0),
+      isInactive: false,
+      notes: ''
+    };
+
+    const updated = [newClientObj, ...clientsList];
+    setClientsList(updated);
+    saveStoredClients(updated);
+
+    setShowAddModal(false);
+    setNewName('');
+    setNewPhone('');
+    setNewAddress('');
+
     try {
       await createClient({
+        id: newId,
         name: newName,
         phone: newPhone,
         address: newAddress,
         neighborhood: newNeighborhood,
         containers_held: { bidon20L: Number(newBidones) || 0, bidon12L: 0, sifon: 0 }
       });
-      setShowAddModal(false);
-      setNewName('');
-      setNewPhone('');
-      setNewAddress('');
       loadClients();
     } catch (err) {
-      alert('Error al guardar cliente: ' + err.message);
+      console.warn('API save offline fallback:', err.message);
     }
   };
 
@@ -217,6 +343,33 @@ export default function Clientes() {
     e.preventDefault();
     if (!editingClient) return;
     setSavingEdit(true);
+
+    const updatedClient = {
+      ...editingClient,
+      name: editName,
+      phone: editPhone,
+      addressRaw: editAddress,
+      neighborhood: editNeighborhood,
+      address: `${editAddress}${editNeighborhood ? `, ${editNeighborhood}` : ''}`,
+      balance: -Math.abs(Number(editBalance) || 0),
+      notes: editNotes,
+      containersHeld: {
+        bidon20L: Number(editBidones20L) || 0,
+        bidon12L: Number(editBidones12L) || 0,
+        sifon: Number(editSifones) || 0
+      },
+      containers: [
+        { label: 'Bidón 20L', qty: Number(editBidones20L) || 0 },
+        { label: 'Bidón 12L', qty: Number(editBidones12L) || 0 },
+        { label: 'Sifón', qty: Number(editSifones) || 0 }
+      ].filter(x => x.qty > 0)
+    };
+
+    const updatedList = clientsList.map(c => c.id === editingClient.id ? updatedClient : c);
+    setClientsList(updatedList);
+    saveStoredClients(updatedList);
+    setEditingClient(null);
+
     try {
       await updateClient(editingClient.id, {
         name: editName,
@@ -231,10 +384,8 @@ export default function Clientes() {
           sifon: Number(editSifones) || 0
         }
       });
-      setEditingClient(null);
-      loadClients();
     } catch (err) {
-      alert('Error al actualizar cliente: ' + err.message);
+      console.warn('API update offline fallback:', err.message);
     } finally {
       setSavingEdit(false);
     }
@@ -245,12 +396,17 @@ export default function Clientes() {
     const confirmed = window.confirm(`¿Estás seguro de que deseás eliminar al cliente "${client.name}"?`);
     if (!confirmed) return;
 
+    // Immediately persist deletion in localStorage & mark ID as deleted
+    saveDeletedClientId(client.id);
+    const updated = clientsList.filter(c => String(c.id) !== String(client.id));
+    setClientsList(updated);
+    saveStoredClients(updated);
+
+    // Call API in background
     try {
       await deleteClient(client.id);
-      setClientsList((prev) => prev.filter((c) => c.id !== client.id));
-      loadClients();
     } catch (err) {
-      alert('Error al eliminar cliente: ' + err.message);
+      console.warn('API delete offline fallback:', err.message);
     }
   };
 
@@ -332,6 +488,26 @@ export default function Clientes() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {clientsList.length === 0 ? (
+              <button
+                onClick={handleRestoreDemoClients}
+                className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold flex items-center space-x-1.5 transition text-xs"
+                title="Restablecer clientes de prueba"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span>Restablecer Demo</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleClearAllClients}
+                className="px-2.5 py-2 rounded-lg border border-gray-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 text-gray-500 font-semibold flex items-center space-x-1 transition text-xs"
+                title="Vaciar todos los clientes de prueba"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Vaciar</span>
+              </button>
+            )}
+
             <button 
               onClick={() => setSelectedClientForQr({ isGeneric: true, name: 'General' })}
               className="px-3 py-2 rounded-lg bg-sky-50 border border-sky-200 text-[#0c315b] font-bold flex items-center space-x-1.5 hover:bg-sky-100 transition"
@@ -456,6 +632,34 @@ export default function Clientes() {
               </div>
             );
           })}
+
+          {filtered.length === 0 && (
+            <div className="py-12 text-center text-gray-500 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-sky-50 text-[#0c315b] flex items-center justify-center mx-auto font-bold">
+                <Home className="w-6 h-6 text-sky-700" />
+              </div>
+              <p className="text-sm font-bold text-gray-800">No se encontraron clientes.</p>
+              {clientsList.length === 0 ? (
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                  <button
+                    onClick={() => setShowAddModal(true)}
+                    className="px-3.5 py-2 rounded-lg bg-[#0c315b] text-white text-xs font-bold hover:bg-[#082342] transition shadow-2xs"
+                  >
+                    Agregar nuevo cliente
+                  </button>
+                  <button
+                    onClick={handleRestoreDemoClients}
+                    className="px-3.5 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold transition flex items-center gap-1.5"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                    <span>Restablecer clientes de ejemplo</span>
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400">Probá ajustando el término de búsqueda o desactivando los filtros.</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

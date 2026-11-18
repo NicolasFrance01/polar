@@ -12,33 +12,60 @@ import {
   Plus, 
   ExternalLink,
   CheckCircle2,
-  Tag
+  Tag,
+  Trash2,
+  RotateCw
 } from 'lucide-react';
+
+const REFERRALS_STORAGE_KEY = 'polar_simulated_referrals_v2';
+
+const DEFAULT_REFERRALS = [
+  {
+    id: 'ref-1',
+    referredName: 'Familia Rossi',
+    date: '10/11/2026',
+    status: 'Completado',
+    reward: '$2.000 saldo a favor',
+    source: 'Cliente'
+  },
+  {
+    id: 'ref-2',
+    referredName: 'Panadería La Espiga',
+    date: '12/11/2026',
+    status: 'Primer pedido entregado',
+    reward: '1 Bidón 20L bonificado',
+    source: 'Cliente'
+  }
+];
+
+function getStoredReferrals() {
+  try {
+    const raw = localStorage.getItem(REFERRALS_STORAGE_KEY);
+    if (raw !== null) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.error('Error reading stored referrals:', e);
+  }
+  return DEFAULT_REFERRALS;
+}
+
+function saveStoredReferrals(list) {
+  try {
+    localStorage.setItem(REFERRALS_STORAGE_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error saving stored referrals:', e);
+  }
+}
 
 export default function Referidos() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [referralCode, setReferralCode] = useState('POLAR-CORDOBA');
   const [activeTab, setActiveTab] = useState('clientes'); // 'clientes' | 'soderias'
 
-  // Test / Simulated Referrals state
-  const [simulatedReferrals, setSimulatedReferrals] = useState([
-    {
-      id: 'ref-1',
-      referredName: 'Familia Rossi',
-      date: '10/11/2026',
-      status: 'Completado',
-      reward: '$2.000 saldo a favor',
-      source: 'Cliente'
-    },
-    {
-      id: 'ref-2',
-      referredName: 'Panadería La Espiga',
-      date: '12/11/2026',
-      status: 'Primer pedido entregado',
-      reward: '1 Bidón 20L bonificado',
-      source: 'Cliente'
-    }
-  ]);
+  // Test / Simulated Referrals state persisted in localStorage
+  const [simulatedReferrals, setSimulatedReferrals] = useState(() => getStoredReferrals());
 
   const [toastMessage, setToastMessage] = useState(null);
 
@@ -88,9 +115,36 @@ export default function Referidos() {
       source: activeTab === 'clientes' ? 'Cliente' : 'Sodería'
     };
 
-    setSimulatedReferrals([newEntry, ...simulatedReferrals]);
+    const updated = [newEntry, ...simulatedReferrals];
+    setSimulatedReferrals(updated);
+    saveStoredReferrals(updated);
     setToastMessage(`🎉 ¡Nuevo referido simulado exitosamente! Se registró "${pickedName}" con tu código.`);
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const handleDeleteReferral = (id, name) => {
+    const updated = simulatedReferrals.filter(r => r.id !== id);
+    setSimulatedReferrals(updated);
+    saveStoredReferrals(updated);
+    setToastMessage(`🗑️ Se eliminó "${name || 'referido'}" del historial.`);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleClearAllReferrals = () => {
+    if (simulatedReferrals.length === 0) return;
+    const confirmed = window.confirm('¿Estás seguro de que deseás vaciar todo el historial y simulador de prueba?');
+    if (!confirmed) return;
+    setSimulatedReferrals([]);
+    saveStoredReferrals([]);
+    setToastMessage('Historial de referidos vaciado.');
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleRestoreDefaultReferrals = () => {
+    setSimulatedReferrals(DEFAULT_REFERRALS);
+    saveStoredReferrals(DEFAULT_REFERRALS);
+    setToastMessage('Se restauraron los ejemplos de prueba del programa de referidos.');
+    setTimeout(() => setToastMessage(null), 3000);
   };
 
   return (
@@ -251,42 +305,72 @@ export default function Referidos() {
             </p>
           </div>
 
-          <button
-            onClick={handleSimulateReferral}
-            className="px-3.5 py-2 rounded-xl bg-[#0c315b] hover:bg-[#082342] text-white font-bold text-xs flex items-center space-x-1.5 transition shadow-xs self-start sm:self-auto"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Simular nuevo referido de prueba</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            {simulatedReferrals.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAllReferrals}
+                className="px-3 py-2 rounded-xl border border-gray-300 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 text-gray-600 font-bold text-xs flex items-center space-x-1 transition shadow-2xs"
+                title="Vaciar todo el historial"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Vaciar Historial</span>
+              </button>
+            )}
+
+            {simulatedReferrals.length === 0 && (
+              <button
+                type="button"
+                onClick={handleRestoreDefaultReferrals}
+                className="px-3 py-2 rounded-xl border border-gray-300 hover:bg-gray-100 text-gray-700 font-bold text-xs flex items-center space-x-1 transition shadow-2xs"
+                title="Restablecer ejemplos demo"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span>Restablecer Demo</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSimulateReferral}
+              className="px-3.5 py-2 rounded-xl bg-[#0c315b] hover:bg-[#082342] text-white font-bold text-xs flex items-center space-x-1.5 transition shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Simular nuevo referido</span>
+            </button>
+          </div>
         </div>
 
         {/* Stats counter */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
           <div className="p-3 bg-sky-50/60 border border-sky-100 rounded-xl">
             <span className="text-[10px] uppercase font-bold text-sky-800 block">Total Referidos</span>
-            <span className="text-xl font-black text-[#0c315b]">{simulatedReferrals.length + 8}</span>
+            <span className="text-xl font-black text-[#0c315b]">{simulatedReferrals.length}</span>
           </div>
           <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-xl">
             <span className="text-[10px] uppercase font-bold text-emerald-800 block">Pedidos Completados</span>
-            <span className="text-xl font-black text-emerald-700">{simulatedReferrals.length + 6}</span>
+            <span className="text-xl font-black text-emerald-700">
+              {simulatedReferrals.filter(r => (r.status || '').toLowerCase().includes('completado') || (r.status || '').toLowerCase().includes('entregado')).length}
+            </span>
           </div>
           <div className="p-3 bg-amber-50/60 border border-amber-100 rounded-xl">
-            <span className="text-[10px] uppercase font-bold text-amber-800 block">Bidones Bonificados</span>
-            <span className="text-xl font-black text-amber-700">{simulatedReferrals.length + 3}</span>
+            <span className="text-[10px] uppercase font-bold text-amber-800 block">Bonificaciones Activas</span>
+            <span className="text-xl font-black text-amber-700">{simulatedReferrals.length}</span>
           </div>
           <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-xl">
             <span className="text-[10px] uppercase font-bold text-purple-800 block">Saldo Acreditado</span>
-            <span className="text-xl font-black text-purple-700">${((simulatedReferrals.length + 4) * 2000).toLocaleString()}</span>
+            <span className="text-xl font-black text-purple-700">${(simulatedReferrals.length * 2000).toLocaleString()}</span>
           </div>
         </div>
 
         {/* Referrals Table */}
         <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 text-xs">
-          <div className="bg-gray-50 px-3.5 py-2 font-bold text-gray-500 uppercase text-[10px] grid grid-cols-12 gap-2">
+          <div className="bg-gray-50 px-3.5 py-2 font-bold text-gray-500 uppercase text-[10px] grid grid-cols-12 gap-2 items-center">
             <div className="col-span-4">Referido</div>
             <div className="col-span-2">Fecha</div>
             <div className="col-span-3">Estado</div>
-            <div className="col-span-3 text-right">Bonificación</div>
+            <div className="col-span-2 text-right">Bonificación</div>
+            <div className="col-span-1 text-right">Acción</div>
           </div>
 
           {simulatedReferrals.map((ref) => (
@@ -302,11 +386,29 @@ export default function Referidos() {
                   {ref.status}
                 </span>
               </div>
-              <div className="col-span-3 text-right font-extrabold text-[#0c315b]">
+              <div className="col-span-2 text-right font-extrabold text-[#0c315b]">
                 {ref.reward}
+              </div>
+              <div className="col-span-1 text-right flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => handleDeleteReferral(ref.id, ref.referredName)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                  title="Eliminar este referido"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           ))}
+
+          {simulatedReferrals.length === 0 && (
+            <div className="p-8 text-center text-gray-500 space-y-2">
+              <Gift className="w-8 h-8 text-gray-300 mx-auto" />
+              <p className="text-xs font-bold text-gray-700">El historial de referidos está vacío.</p>
+              <p className="text-[11px] text-gray-400">Podés simular nuevas recomendaciones con el botón superior o restablecer los ejemplos.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
