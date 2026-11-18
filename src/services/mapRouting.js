@@ -25,72 +25,57 @@ function resolveOriginString(originLocation) {
 }
 
 // Google Maps multi-stop embed iframe URL (draws real street routes and connects all stops)
+// ALWAYS starts from origin (user or driver location), then connects all stops in exact order:
+// Mi Ubicación -> Parada 1 -> Parada 2 -> Parada 3...
 export function getGoogleMapsRouteEmbedUrl(stops, originLocation = null) {
   const originStr = resolveOriginString(originLocation);
 
   if (!stops || stops.length === 0) {
-    if (originStr) {
+    if (originStr && originStr !== 'Current Location' && originStr !== 'My Location') {
       return `https://maps.google.com/maps?q=${encodeURIComponent(originStr)}&t=&z=14&ie=UTF8&iwloc=&output=embed`;
     }
     return 'https://maps.google.com/maps?q=Cordoba,%20Argentina&t=&z=13&ie=UTF8&iwloc=&output=embed';
   }
 
-  // When an explicit origin is provided (e.g. driver live location):
-  // The route starts at the origin, and goes through ALL stops in order
-  if (originStr) {
-    const origin = encodeURIComponent(originStr);
-    const destAndWaypoints = stops.map((s) => encodeURIComponent(cleanAddressQuery(s))).join('+to:');
-    return `https://maps.google.com/maps?saddr=${origin}&daddr=${destAndWaypoints}&output=embed`;
-  }
+  // The route ALWAYS starts from origin (user live location or Córdoba fallback coords):
+  const origin = (originStr && originStr !== 'Current Location' && originStr !== 'My Location')
+    ? encodeURIComponent(originStr)
+    : encodeURIComponent('-31.4170,-64.1830');
 
-  // Fallback when no origin is provided:
-  if (stops.length === 1) {
-    const q = cleanAddressQuery(stops[0]);
-    return `https://maps.google.com/maps?q=${encodeURIComponent(q)}&t=&z=16&ie=UTF8&iwloc=&output=embed`;
-  }
-
-  // Connect Stop 1 to Stop 2, 3...
-  const origin = encodeURIComponent(cleanAddressQuery(stops[0]));
-  const destAndWaypoints = stops.slice(1).map((s) => encodeURIComponent(cleanAddressQuery(s))).join('+to:');
+  // ALL stops are in daddr in order, separated by +to:
+  const destAndWaypoints = stops.map((s) => encodeURIComponent(cleanAddressQuery(s))).join('+to:');
   return `https://maps.google.com/maps?saddr=${origin}&daddr=${destAndWaypoints}&output=embed`;
 }
 
 // Google Maps native app / web navigation deep link with all stops and waypoints
+// ALWAYS starts from "Mi ubicación" (or coordinates) to Stop 1, Stop 2, ..., Stop N
 export function getGoogleMapsDirectionsAppUrl(stops, originLocation = null) {
-  const originStr = resolveOriginString(originLocation);
-
   if (!stops || stops.length === 0) {
     return 'https://www.google.com/maps';
   }
 
-  // When driver origin is provided (or 'Current Location'):
-  if (originStr) {
-    const origin = encodeURIComponent(originStr);
-    if (stops.length === 1) {
-      const destination = encodeURIComponent(cleanAddressQuery(stops[0]));
-      return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
-    }
+  const originCoordStr = resolveOriginString(originLocation);
 
-    const destination = encodeURIComponent(cleanAddressQuery(stops[stops.length - 1]));
-    const waypoints = stops.slice(0, -1).map((s) => encodeURIComponent(cleanAddressQuery(s))).join('|');
-    return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}&travelmode=driving`;
-  }
+  // In Google Maps Directions API:
+  // If coordinates are provided, pass &origin=lat,lng
+  // If no coordinates are provided (or 'Current Location'), omit origin so Google Maps automatically defaults to device location (Tu ubicación)
+  const originParam = (originCoordStr && originCoordStr !== 'Current Location' && originCoordStr !== 'My Location')
+    ? `&origin=${encodeURIComponent(originCoordStr)}`
+    : '';
 
-  if (stops.length === 1) {
-    const q = cleanAddressQuery(stops[0]);
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
-  }
-
-  const origin = encodeURIComponent(cleanAddressQuery(stops[0]));
+  // Destination is ALWAYS the last stop in the route
   const destination = encodeURIComponent(cleanAddressQuery(stops[stops.length - 1]));
-  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
 
-  if (stops.length > 2) {
-    const waypoints = stops.slice(1, -1).map((s) => encodeURIComponent(cleanAddressQuery(s))).join('|');
-    url += `&waypoints=${waypoints}`;
+  // If there's only 1 stop: route from Mi Ubicación -> Stop 1
+  if (stops.length === 1) {
+    return `https://www.google.com/maps/dir/?api=1${originParam}&destination=${destination}&travelmode=driving`;
   }
 
-  return url;
+  // If there are multiple stops:
+  // Waypoints are all stops from Stop 1 up to Stop N-1
+  // Destination is Stop N
+  const waypoints = stops.slice(0, -1).map((s) => encodeURIComponent(cleanAddressQuery(s))).join('|');
+  return `https://www.google.com/maps/dir/?api=1${originParam}&destination=${destination}&waypoints=${waypoints}&travelmode=driving`;
 }
 
 // Single stop Waze link

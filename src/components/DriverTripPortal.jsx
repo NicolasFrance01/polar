@@ -298,12 +298,12 @@ export default function DriverTripPortal({ tripId = 'VIAJE-25', tripNumber = nul
   const totalStops = stops.length || 1;
   const nextStopObj = stops.find((s) => s.isNext && s.status !== 'entregado') || stops.find((s) => s.status === 'en_camino' || s.status === 'pendiente');
 
-  // Origin from driver live coordinates or current device location
+  // Origin from driver live coordinates or device location
   const driverOrigin = (driverCoords?.lat && driverCoords?.lng)
     ? `${driverCoords.lat},${driverCoords.lng}`
     : (currentTrip.driverCoords?.lat && currentTrip.driverCoords?.lng)
     ? `${currentTrip.driverCoords.lat},${currentTrip.driverCoords.lng}`
-    : 'Current Location';
+    : null;
 
   // Active pending stops for navigation
   const pendingStops = stops.filter((s) => s.status !== 'entregado');

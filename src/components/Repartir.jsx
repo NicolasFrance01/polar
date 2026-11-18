@@ -50,6 +50,11 @@ export default function Repartir({ onOpenDriverTrip }) {
   const [drivers, setDrivers] = useState(DEFAULT_DRIVERS);
   const [availableSearch, setAvailableSearch] = useState('');
 
+  // Live user/depot GPS coordinates for route starting point
+  const [userCoords, setUserCoords] = useState(null);
+  const [gpsStatus, setGpsStatus] = useState('Detectando ubicación...');
+  const [gpsReady, setGpsReady] = useState(false);
+
   // Route creation form
   const [selectedDriverName, setSelectedDriverName] = useState(DEFAULT_DRIVERS[0].name);
   const [driverPhone, setDriverPhone] = useState(DEFAULT_DRIVERS[0].phone);
@@ -64,6 +69,27 @@ export default function Repartir({ onOpenDriverTrip }) {
   const [historyFilter, setHistoryFilter] = useState('todos'); // 'todos' | 'en_curso' | 'finalizada'
   const [expandedTripId, setExpandedTripId] = useState(null);
   const [loadingData, setLoadingData] = useState(false);
+
+  const requestUserLocation = () => {
+    if (!navigator.geolocation) {
+      setGpsStatus('GPS no disponible');
+      return;
+    }
+    setGpsStatus('Buscando GPS...');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUserCoords(coords);
+        setGpsReady(true);
+        setGpsStatus(`GPS Activo (±${Math.round(pos.coords.accuracy || 10)}m)`);
+      },
+      (err) => {
+        console.warn('GPS error in Repartir:', err);
+        setGpsStatus('Permiso de GPS pendiente');
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+    );
+  };
 
   const loadAllData = async () => {
     setLoadingData(true);
@@ -127,6 +153,7 @@ export default function Repartir({ onOpenDriverTrip }) {
 
   useEffect(() => {
     loadAllData();
+    requestUserLocation();
   }, []);
 
   const toggleSelectOrder = (orderId) => {
@@ -182,7 +209,8 @@ export default function Repartir({ onOpenDriverTrip }) {
         truck,
         zone: 'General',
         notes: routeNotes,
-        stops: stopsPayload
+        stops: stopsPayload,
+        initialCoords: userCoords
       });
 
       setCreatedRouteResult({
@@ -332,25 +360,28 @@ export default function Repartir({ onOpenDriverTrip }) {
               {/* Route Map Card (Google Maps Real Street Routing) */}
               <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 shadow-2xs space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center space-x-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <MapPin className="w-4 h-4 text-[#0c315b]" />
                     <h2 className="text-sm font-bold text-gray-900">
                       Ruta Multi-Parada en Google Maps
                     </h2>
-                    {selectedOrders.length >= 2 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                      Inicia en Tu Ubicación
+                    </span>
+                    {selectedOrders.length >= 1 && (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-[#0c315b]">
-                        {selectedOrders.length} paradas unidas
+                        +{selectedOrders.length} {selectedOrders.length === 1 ? 'parada' : 'paradas'}
                       </span>
                     )}
                   </div>
 
                   <div className="flex items-center gap-2">
                     <a
-                      href={getGoogleMapsDirectionsAppUrl(selectedOrders.length > 0 ? selectedOrders : (focusedOrder ? [focusedOrder] : []))}
+                      href={getGoogleMapsDirectionsAppUrl(selectedOrders.length > 0 ? selectedOrders : (focusedOrder ? [focusedOrder] : []), userCoords)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-[#0c315b] border border-sky-200 text-xs font-bold flex items-center gap-1 transition"
-                      title="Abrir recorrido multi-parada completo en Google Maps"
+                      title="Abrir recorrido multi-parada completo en Google Maps iniciando desde mi ubicación"
                     >
                       <span>Abrir en Maps</span>
                       <ExternalLink className="w-3 h-3" />
@@ -360,28 +391,35 @@ export default function Repartir({ onOpenDriverTrip }) {
 
                 {/* Google Maps Embed Full Container */}
                 <div className="flex flex-col h-72 sm:h-84 rounded-xl overflow-hidden border border-gray-200 bg-gray-50 shadow-inner">
-                  <div className="px-3 py-1.5 bg-white border-b border-gray-200 text-[11px] flex items-center justify-between">
-                    <span className="font-bold text-[#0c315b] truncate">
-                      {selectedOrders.length >= 2 ? (
-                        <>
-                          🛣️ Recorrido: {selectedOrders.map((o, idx) => `${idx + 1}. ${o.clientName}`).join(' ➔ ')}
-                        </>
-                      ) : selectedOrders.length === 1 ? (
-                        <>📍 Parada 1: {selectedOrders[0].clientName} ({selectedOrders[0].address})</>
-                      ) : focusedOrder ? (
-                        <>📍 Vista de pedido: {focusedOrder.clientName} ({focusedOrder.address})</>
-                      ) : (
-                        <>Google Maps Córdoba · Seleccioná pedidos para unir las paradas</>
-                      )}
+                  <div className="px-3 py-1.5 bg-white border-b border-gray-200 text-[11px] flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-[#0c315b] truncate flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span>
+                        {selectedOrders.length > 0 ? (
+                          <>
+                            📍 Inicio: Mi ubicación ➔ {selectedOrders.map((o, idx) => `${idx + 1}. ${o.clientName}`).join(' ➔ ')}
+                          </>
+                        ) : focusedOrder ? (
+                          <>📍 Inicio: Mi ubicación ➔ 1. {focusedOrder.clientName} ({focusedOrder.address})</>
+                        ) : (
+                          <>Google Maps · Seleccioná pedidos para unir las paradas desde tu ubicación actual</>
+                        )}
+                      </span>
                     </span>
-                    <span className="text-gray-400 text-[10px] hidden sm:inline">
-                      Traza las calles exactas en Google Maps
-                    </span>
+                    <button
+                      type="button"
+                      onClick={requestUserLocation}
+                      className="text-gray-500 hover:text-[#0c315b] text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                      title="Actualizar mi ubicación actual"
+                    >
+                      <RotateCw className="w-3 h-3" />
+                      <span>{gpsStatus}</span>
+                    </button>
                   </div>
 
                   <iframe
                     title="Google Maps Route"
-                    src={getGoogleMapsRouteEmbedUrl(selectedOrders.length > 0 ? selectedOrders : (focusedOrder ? [focusedOrder] : []))}
+                    src={getGoogleMapsRouteEmbedUrl(selectedOrders.length > 0 ? selectedOrders : (focusedOrder ? [focusedOrder] : []), userCoords)}
                     className="w-full flex-1 border-0"
                     loading="lazy"
                   />
@@ -560,7 +598,26 @@ export default function Repartir({ onOpenDriverTrip }) {
                       Marcá los pedidos de la lista para agregarlos a esta Hoja de Ruta.
                     </div>
                   ) : (
-                    <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                    <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                      {/* Fixed Stop 0: User Current Location (Start point) */}
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-xs shadow-2xs">
+                        <div className="flex items-center space-x-2 min-w-0">
+                          <span className="w-5 h-5 rounded-full bg-emerald-600 text-white font-black text-[10px] flex items-center justify-center flex-shrink-0">
+                            0
+                          </span>
+                          <div className="min-w-0">
+                            <strong className="text-emerald-950 block truncate">📍 Inicio: Mi Ubicación Actual</strong>
+                            <span className="text-[10px] text-emerald-700 block truncate">
+                              {userCoords ? `GPS: ${userCoords.lat.toFixed(4)}, ${userCoords.lng.toFixed(4)}` : 'Detectando tu posición actual'}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex-shrink-0">
+                          Punto de partida
+                        </span>
+                      </div>
+
+                      {/* Selected Stops In Exact Order */}
                       {selectedOrders.map((ord, idx) => (
                         <div
                           key={ord.orderId}

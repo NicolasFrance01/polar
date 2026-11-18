@@ -245,7 +245,7 @@ export default async function handler(req, res) {
 
       // 5. Create new trip (Hoja de Ruta #XX) from selected orders
       if (action === 'create_trip') {
-        const { driverName, driverPhone, truck, zone, notes, stops } = req.body;
+        const { driverName, driverPhone, truck, zone, notes, stops, initialCoords } = req.body;
         if (!driverName || !Array.isArray(stops) || stops.length === 0) {
           return res.status(400).json({ error: 'Se requiere chofer y al menos un pedido seleccionado.' });
         }
@@ -255,10 +255,9 @@ export default async function handler(req, res) {
         const tripId = `VIAJE-${nextTripNumber}`;
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-        // Initial truck coordinates = first stop with coords or default Córdoba
-        const firstWithCoords = stops.find(s => s.coords?.lat && s.coords?.lng);
-        const initialLat = firstWithCoords ? firstWithCoords.coords.lat : -31.4089;
-        const initialLng = firstWithCoords ? firstWithCoords.coords.lng : -64.1956;
+        // Initial truck coordinates: user/driver origin or default Córdoba center
+        const initialLat = (initialCoords?.lat != null) ? Number(initialCoords.lat) : -31.4170;
+        const initialLng = (initialCoords?.lng != null) ? Number(initialCoords.lng) : -64.1830;
 
         await query(`
           INSERT INTO trips (id, trip_number, driver_name, truck, driver_phone, zone, driver_lat, driver_lng, status, last_update, notes)
