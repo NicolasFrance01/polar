@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
-import { 
-  Gift, 
-  Copy, 
-  Check, 
-  MessageCircle, 
-  Share2, 
-  Award, 
-  TrendingUp, 
-  Users, 
-  Sparkles, 
-  Plus, 
+import {
+  Gift,
+  Copy,
+  Check,
+  MessageCircle,
+  Share2,
+  Award,
+  TrendingUp,
+  Users,
+  Sparkles,
+  Plus,
   ExternalLink,
   CheckCircle2,
   Tag,
@@ -84,15 +84,15 @@ export default function Referidos() {
   const handleShareWhatsApp = () => {
     const text = activeTab === 'clientes'
       ? encodeURIComponent(
-          `¡Hola! 🌊 Te recomiendo *Soda y Agua POLAR*. Podés pedir bidones de 20L purificados y sifones de soda a domicilio con entrega rápida en Córdoba.\n\n` +
-          `🎁 Hacé tu primer pedido desde mi enlace de recomendación y recibí una bonificación en tu carga:\n` +
-          `👉 ${clientReferralUrl}`
-        )
+        `¡Hola! 🌊 Te recomiendo *Soda y Agua POLAR*. Podés pedir bidones de 20L purificados y sifones de soda a domicilio con entrega rápida en Córdoba.\n\n` +
+        `🎁 Hacé tu primer pedido desde mi enlace de recomendación y recibí una bonificación en tu carga:\n` +
+        `👉 ${clientReferralUrl}`
+      )
       : encodeURIComponent(
-          `¡Hola colega! 🚚 Te comparto el software de gestión y ruteo en vivo *POLAR Reparto Cloud* que usamos para optimizar camiones y control de envases.\n\n` +
-          `Registrate desde acá con nuestro código de recomendación para obtener descuento en el plan:\n` +
-          `👉 ${businessReferralUrl}`
-        );
+        `¡Hola colega! 🚚 Te comparto el software de gestión y ruteo en vivo *POLAR Reparto Cloud* que usamos para optimizar camiones y control de envases.\n\n` +
+        `Registrate desde acá con nuestro código de recomendación para obtener descuento en el plan:\n` +
+        `👉 ${businessReferralUrl}`
+      );
 
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
@@ -186,22 +186,20 @@ export default function Referidos() {
       <div className="flex border-b border-gray-200 text-xs font-bold text-gray-500">
         <button
           onClick={() => setActiveTab('clientes')}
-          className={`pb-3 px-4 border-b-2 transition flex items-center gap-2 ${
-            activeTab === 'clientes'
+          className={`pb-3 px-4 border-b-2 transition flex items-center gap-2 ${activeTab === 'clientes'
               ? 'border-[#0c315b] text-[#0c315b] font-extrabold'
               : 'border-transparent hover:text-gray-900'
-          }`}
+            }`}
         >
           <Users className="w-4 h-4" />
           <span>Referir Clientes (Vecinos y Empresas)</span>
         </button>
         <button
           onClick={() => setActiveTab('soderias')}
-          className={`pb-3 px-4 border-b-2 transition flex items-center gap-2 ${
-            activeTab === 'soderias'
+          className={`pb-3 px-4 border-b-2 transition flex items-center gap-2 ${activeTab === 'soderias'
               ? 'border-[#0c315b] text-[#0c315b] font-extrabold'
               : 'border-transparent hover:text-gray-900'
-          }`}
+            }`}
         >
           <Award className="w-4 h-4" />
           <span>Referir Soderías Colegas (Software Cloud)</span>
